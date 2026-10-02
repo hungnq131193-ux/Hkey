@@ -1,10 +1,13 @@
 package com.hkey.app.service
 
 import android.inputmethodservice.InputMethodService
+import android.os.Handler
+import android.os.Looper
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
-import android.view.inputmethod.EditorInfo
-import android.widget.Button
-import android.widget.LinearLayout
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.TextView
 import com.hkey.app.R
 import com.hkey.app.engine.ContextPredictor
@@ -22,61 +25,152 @@ class HKeyIME : InputMethodService() {
     private var candidate2: TextView? = null
     private var candidate3: TextView? = null
 
-    override fun onCreateInputView(): View {
-        val keyboardView = layoutInflater.inflate(R.layout.keyboard_view, null)
+    private var lettersPage: View? = null
+    private var symbolsPage: View? = null
+    private var shiftOn = false
+    private val letterKeys = mutableListOf<TextView>()
+    private var shiftKey: TextView? = null
 
-        candidate1 = keyboardView.findViewById(R.id.candidate1)
-        candidate2 = keyboardView.findViewById(R.id.candidate2)
-        candidate3 = keyboardView.findViewById(R.id.candidate3)
+    private val repeatHandler = Handler(Looper.getMainLooper())
+    private val deleteRepeat = object : Runnable {
+        override fun run() {
+            handleDelete()
+            repeatHandler.postDelayed(this, 60)
+        }
+    }
+
+    override fun onCreateInputView(): View {
+        val root = layoutInflater.inflate(R.layout.keyboard_view, null)
+
+        letterKeys.clear()
+        shiftKey = null
+
+        candidate1 = root.findViewById(R.id.candidate1)
+        candidate2 = root.findViewById(R.id.candidate2)
+        candidate3 = root.findViewById(R.id.candidate3)
 
         candidate1?.setOnClickListener { acceptSuggestion(candidate1?.text.toString()) }
         candidate2?.setOnClickListener { acceptSuggestion(candidate2?.text.toString()) }
         candidate3?.setOnClickListener { acceptSuggestion(candidate3?.text.toString()) }
 
-        setupKeyClicks(keyboardView)
+        val pages = root.findViewById<FrameLayout>(R.id.kb_pages)
+        lettersPage = layoutInflater.inflate(R.layout.keyboard_letters, pages, false)
+        symbolsPage = layoutInflater.inflate(R.layout.keyboard_symbols, pages, false)
+        pages.addView(lettersPage)
+        pages.addView(symbolsPage)
+        symbolsPage?.visibility = View.GONE
+
+        bindKeys(lettersPage)
+        bindKeys(symbolsPage)
         updateSuggestions()
 
-        return keyboardView
+        return root
     }
 
-    private fun setupKeyClicks(root: View) {
-        val keys = listOf(
-            R.id.key_q to "q", R.id.key_w to "w", R.id.key_e to "e", R.id.key_r to "r",
-            R.id.key_t to "t", R.id.key_y to "y", R.id.key_u to "u", R.id.key_i to "i",
-            R.id.key_o to "o", R.id.key_p to "p", R.id.key_a to "a", R.id.key_s to "s",
-            R.id.key_d to "d", R.id.key_f to "f", R.id.key_g to "g", R.id.key_h to "h",
-            R.id.key_j to "j", R.id.key_k to "k", R.id.key_l to "l", R.id.key_z to "z",
-            R.id.key_x to "x", R.id.key_c to "c", R.id.key_v to "v", R.id.key_b to "b",
-            R.id.key_n to "n", R.id.key_m to "m"
-        )
-
-        for ((id, char) in keys) {
-            root.findViewById<Button>(id)?.setOnClickListener { handleCharacter(char) }
+    private fun bindKeys(root: View?) {
+        forEachView(root) { view ->
+            val tag = view.tag as? String ?: return@forEachView
+            val tv = view as? TextView ?: return@forEachView
+            when {
+                tag.startsWith("ch:") -> {
+                    letterKeys.add(tv)
+                    tv.setOnClickListener { handleCharacter(tag.removePrefix("ch:")) }
+                }
+                tag.startsWith("p:") -> {
+                    tv.setOnClickListener { handlePunct(tag.removePrefix("p:")) }
+                }
+                tag == "fn:space" -> tv.setOnClickListener { handleSpace() }
+                tag == "fn:enter" -> tv.setOnClickListener { handleEnter() }
+                tag == "fn:del" -> bindDeleteKey(tv)
+                tag == "fn:shift" -> {
+                    shiftKey = tv
+                    tv.setOnClickListener { toggleShift() }
+                }
+                tag == "fn:sym" -> tv.setOnClickListener { showPage(symbolsPage) }
+                tag == "fn:abc" -> tv.setOnClickListener { showPage(lettersPage) }
+            }
         }
+    }
 
-        root.findViewById<Button>(R.id.key_space)?.setOnClickListener { handleSpace() }
-        root.findViewById<Button>(R.id.key_delete)?.setOnClickListener { handleDelete() }
-        root.findViewById<Button>(R.id.key_enter)?.setOnClickListener { handleEnter() }
+    private fun forEachView(view: View?, block: (View) -> Unit) {
+        if (view == null) return
+        block(view)
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) forEachView(view.getChildAt(i), block)
+        }
+    }
+
+    private fun bindDeleteKey(tv: TextView) {
+        tv.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    handleDelete()
+                    repeatHandler.postDelayed(deleteRepeat, 400)
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    repeatHandler.removeCallbacks(deleteRepeat)
+                    v.performClick()
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun showPage(page: View?) {
+        lettersPage?.visibility = if (page === lettersPage) View.VISIBLE else View.GONE
+        symbolsPage?.visibility = if (page === symbolsPage) View.VISIBLE else View.GONE
+    }
+
+    private fun toggleShift() {
+        shiftOn = !shiftOn
+        updateShiftUI()
+    }
+
+    private fun updateShiftUI() {
+        for (key in letterKeys) {
+            val base = (key.tag as String).removePrefix("ch:")
+            key.text = if (shiftOn) base.uppercase() else base
+        }
+        shiftKey?.setTextColor(
+            if (shiftOn) resources.getColor(R.color.kb_accent, theme)
+            else resources.getColor(R.color.kb_text, theme)
+        )
     }
 
     private fun handleCharacter(char: String) {
-        currentComposingWord.append(char)
+        val c = if (shiftOn) char.uppercase() else char
+        currentComposingWord.append(c)
+        if (shiftOn) {
+            shiftOn = false
+            updateShiftUI()
+        }
         val transformed = telexEngine.transform(currentComposingWord.toString())
         currentInputConnection?.setComposingText(transformed, 1)
         updateSuggestions()
     }
 
+    private fun handlePunct(p: String) {
+        commitComposing(autocorrect = false)
+        currentInputConnection?.commitText(p, 1)
+        updateSuggestions()
+    }
+
+    private fun commitComposing(autocorrect: Boolean) {
+        if (currentComposingWord.isEmpty()) return
+        val rawWord = telexEngine.transform(currentComposingWord.toString())
+        val word = if (autocorrect) predictor.autoCorrect(rawWord, lastCommittedWord) else rawWord
+        currentInputConnection?.commitText(word, 1)
+        predictor.recordSequence(lastCommittedWord, word)
+        lastCommittedWord = word
+        currentComposingWord.clear()
+    }
+
     private fun handleSpace() {
         if (currentComposingWord.isNotEmpty()) {
-            val rawWord = telexEngine.transform(currentComposingWord.toString())
-            // Sửa lỗi ngữ cảnh tự động
-            val corrected = predictor.autoCorrect(rawWord, lastCommittedWord)
-            currentInputConnection?.commitText("$corrected ", 1)
-
-            // Dynamic learning: Ghi nhận chuỗi từ người dùng gõ
-            predictor.recordSequence(lastCommittedWord, corrected)
-            lastCommittedWord = corrected
-            currentComposingWord.clear()
+            commitComposing(autocorrect = true)
+            currentInputConnection?.commitText(" ", 1)
         } else {
             currentInputConnection?.commitText(" ", 1)
         }
@@ -99,13 +193,9 @@ class HKeyIME : InputMethodService() {
     }
 
     private fun handleEnter() {
-        if (currentComposingWord.isNotEmpty()) {
-            val rawWord = telexEngine.transform(currentComposingWord.toString())
-            currentInputConnection?.commitText(rawWord, 1)
-            currentComposingWord.clear()
-        }
+        commitComposing(autocorrect = false)
         currentInputConnection?.sendKeyEvent(
-            android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER)
+            KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)
         )
     }
 

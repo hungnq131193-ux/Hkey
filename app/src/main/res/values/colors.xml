@@ -1,5 +1,16 @@
 <resources>
-    <color name="ic_launcher_background_start">#FF6B6B</color>
-    <color name="ic_launcher_background_center">#E53935</color>
-    <color name="ic_launcher_background_end">#B71C1C</color>
+    <color name="ic_launcher_background_start">#5C6BC0</color>
+    <color name="ic_launcher_background_center">#3F51B5</color>
+    <color name="ic_launcher_background_end">#1A237E</color>
+
+    <color name="kb_background">#191B1F</color>
+    <color name="kb_candidate_bar">#22252A</color>
+    <color name="kb_divider">#3C4043</color>
+    <color name="kb_key">#3A3E45</color>
+    <color name="kb_key_pressed">#565D68</color>
+    <color name="kb_func_key">#2A2D33</color>
+    <color name="kb_func_pressed">#454B55</color>
+    <color name="kb_text">#E8EAED</color>
+    <color name="kb_text_dim">#9AA0A6</color>
+    <color name="kb_accent">#8AB4F8</color>
 </resources>

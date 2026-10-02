@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="3dp"
+    android:paddingBottom="6dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView style="@style/KbKey" android:tag="p:1" android:text="1" />
+        <TextView style="@style/KbKey" android:tag="p:2" android:text="2" />
+        <TextView style="@style/KbKey" android:tag="p:3" android:text="3" />
+        <TextView style="@style/KbKey" android:tag="p:4" android:text="4" />
+        <TextView style="@style/KbKey" android:tag="p:5" android:text="5" />
+        <TextView style="@style/KbKey" android:tag="p:6" android:text="6" />
+        <TextView style="@style/KbKey" android:tag="p:7" android:text="7" />
+        <TextView style="@style/KbKey" android:tag="p:8" android:text="8" />
+        <TextView style="@style/KbKey" android:tag="p:9" android:text="9" />
+        <TextView style="@style/KbKey" android:tag="p:0" android:text="0" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView style="@style/KbKey" android:tag="p:@" android:text="@" />
+        <TextView style="@style/KbKey" android:tag="p:#" android:text="#" />
+        <TextView style="@style/KbKey" android:tag="p:$" android:text="$" />
+        <TextView style="@style/KbKey" android:tag="p:%" android:text="%" />
+        <TextView style="@style/KbKey" android:tag="p:&amp;" android:text="&amp;" />
+        <TextView style="@style/KbKey" android:tag="p:*" android:text="*" />
+        <TextView style="@style/KbKey" android:tag="p:(" android:text="(" />
+        <TextView style="@style/KbKey" android:tag="p:)" android:text=")" />
+        <TextView style="@style/KbKey" android:tag="p:-" android:text="-" />
+        <TextView style="@style/KbKey" android:tag="p:_" android:text="_" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView style="@style/KbKey" android:tag="p:=" android:text="=" />
+        <TextView style="@style/KbKey" android:tag="p:+" android:text="+" />
+        <TextView style="@style/KbKey" android:tag="p:&quot;" android:text="&quot;" />
+        <TextView style="@style/KbKey" android:tag="p:'" android:text="'" />
+        <TextView style="@style/KbKey" android:tag="p::" android:text=":" />
+        <TextView style="@style/KbKey" android:tag="p:;" android:text=";" />
+        <TextView style="@style/KbKey" android:tag="p:!" android:text="!" />
+        <TextView style="@style/KbKey" android:tag="p:?" android:text="\?" />
+
+        <TextView
+            style="@style/KbKey.Func"
+            android:layout_weight="1.5"
+            android:tag="fn:del"
+            android:text="⌫" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView
+            style="@style/KbKey.Func"
+            android:layout_weight="1.5"
+            android:tag="fn:abc"
+            android:text="ABC"
+            android:textSize="15sp" />
+
+        <TextView style="@style/KbKey" android:tag="p:," android:text="," />
+
+        <TextView
+            style="@style/KbKey"
+            android:layout_weight="4"
+            android:tag="fn:space"
+            android:text="HKey"
+            android:textColor="@color/kb_text_dim"
+            android:textSize="15sp" />
+
+        <TextView style="@style/KbKey" android:tag="p:." android:text="." />
+
+        <TextView
+            style="@style/KbKey.Func"
+            android:layout_weight="1.5"
+            android:tag="fn:enter"
+            android:text="↵" />
+    </LinearLayout>
+</LinearLayout>

@@ -6,9 +6,7 @@ on:
       - main
     tags:
       - 'v*'
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -33,9 +31,6 @@ jobs:
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
-
-      - name: Run Unit Tests
-        # run: ./gradlew testDebugUnitTest --no-daemon
 
       - name: Build Debug & Release APK
         run: ./gradlew assembleDebug assembleRelease --no-daemon

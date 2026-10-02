@@ -32,8 +32,16 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
+      - name: Decode release keystore
+        run: echo "${{ secrets.HKEY_KEYSTORE_B64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+
       - name: Build Debug & Release APK
         run: ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
+        env:
+          HPRE_SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
+          HPRE_SIGNING_STORE_PASSWORD: ${{ secrets.HKEY_KEYSTORE_PASSWORD }}
+          HPRE_SIGNING_KEY_ALIAS: hpre
+          HPRE_SIGNING_KEY_PASSWORD: ${{ secrets.HKEY_KEYSTORE_PASSWORD }}
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

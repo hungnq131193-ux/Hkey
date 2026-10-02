@@ -1,8 +1,10 @@
 package com.hkey.app.engine
 
 /**
- * Lightweight Vietnamese Telex Transformation Engine.
- * Supports standard Telex tones (s, f, r, x, j) and accents (aa->â, aw->ă, ee->ê, oo->ô, ow->ơ, uw->ư, dd->đ).
+ * Vietnamese Telex engine.
+ * Tone keys (s f r x j) only apply when they are the LAST typed character and
+ * the word already contains a vowel. Doubling a tone key (ss, ff...) prints the
+ * literal letter. Marks: aa->â ee->ê oo->ô aw->ă ow->ơ uw->ư dd->đ, lone w->ư.
  */
 class TelexEngine {
 
@@ -29,37 +31,35 @@ class TelexEngine {
         'y' to listOf("y", "ý", "ỳ", "ỷ", "ỹ", "ỵ")
     )
 
+    private val markedVowels = setOf('ă', 'â', 'ê', 'ô', 'ơ', 'ư')
+    private val plainVowels = setOf('a', 'e', 'i', 'o', 'u', 'y')
+
     fun transform(input: String): String {
         if (input.isEmpty()) return ""
-        var text = input.lowercase()
         val isFirstUpper = input.first().isUpperCase()
+        var text = input.lowercase()
 
-        // Phụ âm 'đ'
+        var toneIdx = 0
+        val last = text.last()
+        if (toneMap.containsKey(last)) {
+            if (text.length >= 2 && text[text.length - 2] == last) {
+                text = text.dropLast(1) // gõ đúp = in ký tự thật
+            } else if (text.dropLast(1).any { it in plainVowels || it in markedVowels }) {
+                toneIdx = toneMap.getValue(last)
+                text = text.dropLast(1)
+            }
+        }
+
         text = text.replace("dd", "đ")
-
-        // Nguyên âm có dấu mũ/móc
-        text = text.replace("aa", "â")
-        text = text.replace("aw", "ă")
-        text = text.replace("ee", "ê")
-        text = text.replace("oo", "ô")
-        text = text.replace("ow", "ơ")
-        text = text.replace("uw", "ư")
+        text = text.replace("aa", "â").replace("ee", "ê").replace("oo", "ô")
+        text = text.replace("aw", "ă").replace("ow", "ơ").replace("uw", "ư")
         text = text.replace("w", "ư")
 
-        // Tìm tone key ở cuối hoặc trong từ
-        for ((char, toneIdx) in toneMap) {
-            if (text.contains(char)) {
-                // Kiểm tra xem có nguyên âm để gán dấu thanh không
-                val targetVowel = findVowelToAccent(text)
-                if (targetVowel != null && vowelBase.containsKey(targetVowel)) {
-                    val accented = vowelBase[targetVowel]!![toneIdx]
-                    text = text.replaceFirst(targetVowel.toString(), accented)
-                    // Xóa ký tự gõ dấu (s, f, r, x, j)
-                    val lastCharIdx = text.lastIndexOf(char)
-                    if (lastCharIdx != -1) {
-                        text = text.removeRange(lastCharIdx, lastCharIdx + 1)
-                    }
-                    break
+        if (toneIdx > 0) {
+            val i = toneTargetIndex(text)
+            if (i >= 0) {
+                vowelBase[text[i]]?.get(toneIdx)?.let { accented ->
+                    text = text.substring(0, i) + accented + text.substring(i + 1)
                 }
             }
         }
@@ -71,11 +71,35 @@ class TelexEngine {
         }
     }
 
-    private fun findVowelToAccent(word: String): Char? {
-        val vowels = listOf('ơ', 'ê', 'â', 'ă', 'ô', 'ư', 'a', 'e', 'o', 'u', 'i', 'y')
-        for (v in vowels) {
-            if (word.contains(v)) return v
+    /** 'u' sau 'q' và 'i' sau 'g' trước nguyên âm là phụ âm (qu-, gi-), không phải nguyên âm. */
+    private fun isVowel(text: String, i: Int): Boolean {
+        val c = text[i]
+        if (c !in plainVowels && c !in markedVowels) return false
+        if (c == 'u' && i > 0 && text[i - 1] == 'q') return false
+        if (c == 'i' && i > 0 && text[i - 1] == 'g' &&
+            i + 1 < text.length && (text[i + 1] in plainVowels || text[i + 1] in markedVowels)
+        ) return false
+        return true
+    }
+
+    private fun toneTargetIndex(text: String): Int {
+        // Ưu tiên nguyên âm đã có dấu mũ/móc (lấy cái cuối: "ươ" -> ơ, "uô" -> ô)
+        var lastMarked = -1
+        for (i in text.indices) if (text[i] in markedVowels) lastMarked = i
+        if (lastMarked >= 0) return lastMarked
+
+        // Cụm nguyên âm đầu tiên (đã loại qu-, gi-)
+        var s = -1
+        var e = -1
+        for (i in text.indices) {
+            if (isVowel(text, i)) {
+                if (s == -1) s = i
+                e = i
+            } else if (s != -1) break
         }
-        return null
+        if (s == -1) return -1
+
+        // Kiểu mới: dấu đặt ở nguyên âm đầu (hóa, thủy, của); cụm 3+ âm -> giữa (xoài, xoáy)
+        return if (e - s + 1 >= 3) s + (e - s + 1) / 2 else s
     }
 }

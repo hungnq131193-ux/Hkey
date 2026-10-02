@@ -3,8 +3,10 @@ package com.hkey.app.service
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
+import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.SoundEffectConstants
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -67,6 +69,11 @@ class HKeyIME : InputMethodService() {
         return root
     }
 
+    private fun pressFeedback(v: View) {
+        v.playSoundEffect(SoundEffectConstants.CLICK)
+        v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    }
+
     private fun bindKeys(root: View?) {
         forEachView(root) { view ->
             val tag = view.tag as? String ?: return@forEachView
@@ -74,20 +81,20 @@ class HKeyIME : InputMethodService() {
             when {
                 tag.startsWith("ch:") -> {
                     letterKeys.add(tv)
-                    tv.setOnClickListener { handleCharacter(tag.removePrefix("ch:")) }
+                    tv.setOnClickListener { pressFeedback(tv); handleCharacter(tag.removePrefix("ch:")) }
                 }
                 tag.startsWith("p:") -> {
-                    tv.setOnClickListener { handlePunct(tag.removePrefix("p:")) }
+                    tv.setOnClickListener { pressFeedback(tv); handlePunct(tag.removePrefix("p:")) }
                 }
-                tag == "fn:space" -> tv.setOnClickListener { handleSpace() }
-                tag == "fn:enter" -> tv.setOnClickListener { handleEnter() }
+                tag == "fn:space" -> tv.setOnClickListener { pressFeedback(tv); handleSpace() }
+                tag == "fn:enter" -> tv.setOnClickListener { pressFeedback(tv); handleEnter() }
                 tag == "fn:del" -> bindDeleteKey(tv)
                 tag == "fn:shift" -> {
                     shiftKey = tv
-                    tv.setOnClickListener { toggleShift() }
+                    tv.setOnClickListener { pressFeedback(tv); toggleShift() }
                 }
-                tag == "fn:sym" -> tv.setOnClickListener { showPage(symbolsPage) }
-                tag == "fn:abc" -> tv.setOnClickListener { showPage(lettersPage) }
+                tag == "fn:sym" -> tv.setOnClickListener { pressFeedback(tv); showPage(symbolsPage) }
+                tag == "fn:abc" -> tv.setOnClickListener { pressFeedback(tv); showPage(lettersPage) }
             }
         }
     }
@@ -104,6 +111,7 @@ class HKeyIME : InputMethodService() {
         tv.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    pressFeedback(v)
                     handleDelete()
                     repeatHandler.postDelayed(deleteRepeat, 400)
                     true
@@ -152,15 +160,15 @@ class HKeyIME : InputMethodService() {
     }
 
     private fun handlePunct(p: String) {
-        commitComposing(autocorrect = false)
+        commitComposing()
         currentInputConnection?.commitText(p, 1)
         updateSuggestions()
     }
 
-    private fun commitComposing(autocorrect: Boolean) {
+    /** Chốt từ đang gõ nguyên trạng — không bao giờ tự thay bằng từ khác. */
+    private fun commitComposing() {
         if (currentComposingWord.isEmpty()) return
-        val rawWord = telexEngine.transform(currentComposingWord.toString())
-        val word = if (autocorrect) predictor.autoCorrect(rawWord, lastCommittedWord) else rawWord
+        val word = telexEngine.transform(currentComposingWord.toString())
         currentInputConnection?.commitText(word, 1)
         predictor.recordSequence(lastCommittedWord, word)
         lastCommittedWord = word
@@ -168,12 +176,8 @@ class HKeyIME : InputMethodService() {
     }
 
     private fun handleSpace() {
-        if (currentComposingWord.isNotEmpty()) {
-            commitComposing(autocorrect = true)
-            currentInputConnection?.commitText(" ", 1)
-        } else {
-            currentInputConnection?.commitText(" ", 1)
-        }
+        commitComposing()
+        currentInputConnection?.commitText(" ", 1)
         updateSuggestions()
     }
 
@@ -193,7 +197,7 @@ class HKeyIME : InputMethodService() {
     }
 
     private fun handleEnter() {
-        commitComposing(autocorrect = false)
+        commitComposing()
         currentInputConnection?.sendKeyEvent(
             KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)
         )
@@ -201,6 +205,7 @@ class HKeyIME : InputMethodService() {
 
     private fun acceptSuggestion(word: String) {
         if (word.isEmpty()) return
+        // commitText tự thay thế vùng composing nếu đang gõ dở
         currentInputConnection?.commitText("$word ", 1)
         predictor.recordSequence(lastCommittedWord, word)
         lastCommittedWord = word
@@ -209,9 +214,20 @@ class HKeyIME : InputMethodService() {
     }
 
     private fun updateSuggestions() {
-        val suggestions = predictor.predictNext(lastCommittedWord)
-        candidate1?.text = suggestions.getOrNull(0) ?: ""
-        candidate2?.text = suggestions.getOrNull(1) ?: ""
-        candidate3?.text = suggestions.getOrNull(2) ?: ""
+        if (currentComposingWord.isNotEmpty()) {
+            // Đang gõ: giữa = từ hiện tại, 2 bên = gợi ý hoàn thành
+            val current = telexEngine.transform(currentComposingWord.toString())
+            val completions = predictor.completions(current)
+            candidate1?.text = completions.getOrNull(1) ?: ""
+            candidate2?.text = completions.getOrNull(0) ?: current
+            candidate3?.text = completions.getOrNull(2) ?: ""
+        } else {
+            // Đã chốt từ: giữa = bản sửa (nếu từ có vẻ sai), 2 bên = từ tiếp theo
+            val next = predictor.predictNext(lastCommittedWord)
+            val fix = predictor.correction(lastCommittedWord, null)
+            candidate1?.text = next.getOrNull(1) ?: ""
+            candidate2?.text = fix ?: next.getOrNull(0) ?: ""
+            candidate3?.text = next.getOrNull(2) ?: ""
+        }
     }
 }

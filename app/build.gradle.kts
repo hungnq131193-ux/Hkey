@@ -1,7 +1,24 @@
+import java.io.File
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
 }
+
+// Release signing reuses the HPre release identity so every HKey upgrade
+// keeps the same signature. Credentials come from ~/.gradle/gradle.properties
+// (hpreSigning.*) or CI env vars; the keystore file is never committed.
+val hpreStoreFile = providers.gradleProperty("hpreSigning.storeFile").orNull
+    ?: System.getenv("HPRE_SIGNING_STORE_FILE")
+val hpreStorePassword = providers.gradleProperty("hpreSigning.storePassword").orNull
+    ?: System.getenv("HPRE_SIGNING_STORE_PASSWORD")
+val hpreKeyAlias = providers.gradleProperty("hpreSigning.keyAlias").orNull
+    ?: System.getenv("HPRE_SIGNING_KEY_ALIAS")
+val hpreKeyPassword = providers.gradleProperty("hpreSigning.keyPassword").orNull
+    ?: System.getenv("HPRE_SIGNING_KEY_PASSWORD")
+val hpreSigningReady = !hpreStoreFile.isNullOrBlank() && !hpreStorePassword.isNullOrBlank() &&
+    !hpreKeyAlias.isNullOrBlank() && !hpreKeyPassword.isNullOrBlank() &&
+    File(hpreStoreFile).exists()
 
 android {
     namespace = "com.hkey.app"
@@ -11,10 +28,21 @@ android {
         applicationId = "com.hkey.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (hpreSigningReady) {
+            create("release") {
+                storeFile = file(hpreStoreFile)
+                storePassword = hpreStorePassword
+                keyAlias = hpreKeyAlias
+                keyPassword = hpreKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -23,7 +51,11 @@ android {
         }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hpreSigningReady) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

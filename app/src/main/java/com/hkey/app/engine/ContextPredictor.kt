@@ -233,12 +233,61 @@ class ContextPredictor {
         return sb.toString()
     }
 
-    /** (từ, dạng không dấu, tần suất) — dựng một lần, invalidate khi tự học. */
-    private var vocabIndexCache: List<Triple<String, String, Int>>? = null
-    private val vocabIndex: List<Triple<String, String, Int>>
-        get() = vocabIndexCache
-            ?: vocabulary.map { Triple(it.key, deaccent(it.key), it.value) }
-                .also { vocabIndexCache = it }
+    /**
+     * Index dựng một lần trên vocabulary, invalidate khi tự học/nạp từ điển.
+     * Giữ O(1)-O(log n) cho mọi truy vấn khi từ điển lên tới hàng chục nghìn từ:
+     * sorted+bases cho prefix search, byBase cho lỗi đặt dấu, byLen cho lỗi
+     * lệch 1 ký tự, top cho fallback của predictNext.
+     */
+    private class Index(
+        val sorted: List<Triple<String, String, Int>>, // (từ, không dấu, freq) sắp theo base
+        val bases: Array<String>,                       // base song song với sorted, để binary search
+        val byBase: Map<String, List<Pair<String, Int>>>,
+        val byLen: Map<Int, List<Triple<String, String, Int>>>,
+        val top: List<String>
+    )
+
+    private var indexCache: Index? = null
+    private val index: Index
+        get() = indexCache ?: buildIndex().also { indexCache = it }
+
+    private fun buildIndex(): Index {
+        val entries = vocabulary.entries.map { Triple(it.key, deaccent(it.key), it.value) }
+        val sorted = entries.sortedBy { it.second }
+        val byBase = HashMap<String, MutableList<Pair<String, Int>>>()
+        val byLen = HashMap<Int, MutableList<Triple<String, String, Int>>>()
+        for (e in entries) {
+            byBase.getOrPut(e.second) { mutableListOf() }.add(e.first to e.third)
+            byLen.getOrPut(e.first.length) { mutableListOf() }.add(e)
+        }
+        val top = entries.sortedByDescending { it.third }.map { it.first }.take(3)
+        return Index(sorted, Array(sorted.size) { sorted[it].second }, byBase, byLen, top)
+    }
+
+    /** Nạp thêm từ vào từ điển (file res/raw hoặc từ tự học). Từ đã có giữ
+     *  nguyên tần suất cao hơn. Gọi trên main thread. */
+    fun addWords(words: Collection<String>, freq: Int = 100) {
+        var changed = false
+        for (w in words) {
+            val k = w.trim().lowercase()
+            if (k.isNotEmpty() && !vocabulary.containsKey(k)) {
+                vocabulary[k] = freq
+                changed = true
+            }
+        }
+        if (changed) indexCache = null
+    }
+
+    /** Vị trí đầu tiên có bases[i] >= key. */
+    private fun lowerBound(bases: Array<String>, key: String): Int {
+        var lo = 0
+        var hi = bases.size
+        while (lo < hi) {
+            val mid = (lo + hi) ushr 1
+            if (bases[mid] < key) lo = mid + 1 else hi = mid
+        }
+        return lo
+    }
 
     /** Gợi ý từ tiếp theo theo từ liền trước; fallback = từ phổ biến nhất. */
     fun predictNext(previousWord: String): List<String> {
@@ -247,7 +296,7 @@ class ContextPredictor {
         return if (!nextWords.isNullOrEmpty()) {
             nextWords.entries.sortedByDescending { it.value }.map { it.key }.take(3)
         } else {
-            vocabIndex.sortedByDescending { it.third }.map { it.first }.take(3)
+            index.top
         }
     }
 
@@ -258,11 +307,20 @@ class ContextPredictor {
         if (p.isEmpty()) return emptyList()
         val base = deaccent(p)
         val boost = bigramModel[previousWord?.lowercase()?.trim()] ?: emptyMap()
-        return vocabIndex
-            .filter { it.first != p && it.second.startsWith(base) }
-            .sortedByDescending { it.third + (boost[it.first] ?: 0) * 3 }
-            .map { it.first }
-            .take(3)
+        val idx = index
+        val best = ArrayList<Pair<String, Int>>(4)
+        var i = lowerBound(idx.bases, base)
+        while (i < idx.sorted.size && idx.sorted[i].second.startsWith(base)) {
+            val e = idx.sorted[i]
+            i++
+            if (e.first == p) continue
+            val score = e.third + (boost[e.first] ?: 0) * 3
+            if (best.size == 3 && score <= best[2].second) continue
+            best.add(e.first to score)
+            best.sortByDescending { it.second }
+            if (best.size > 3) best.removeAt(3)
+        }
+        return best.map { it.first }
     }
 
     /**
@@ -276,22 +334,34 @@ class ContextPredictor {
         if (word.isEmpty() || vocabulary.containsKey(word)) return null
         val boost = bigramModel[previousWord?.lowercase()?.trim()] ?: emptyMap()
         val base = deaccent(word)
+        val idx = index
 
         var best: String? = null
         var bestScore = -1L
         var bestSameBase = false
-        var sameBaseCount = 0
         var nearCount = 0
-        for ((cand, candBase, freq) in vocabIndex) {
-            val sameBase = candBase == base
-            if (!sameBase && !editsWithinOne(word, cand)) continue
+        val sameBaseCount = idx.byBase[base]?.size ?: 0
+        // Cùng thân từ (thiếu/lệch dấu): tra map, không quét.
+        for ((cand, freq) in idx.byBase[base].orEmpty()) {
             nearCount++
-            if (sameBase) sameBaseCount++
-            val score = freq.toLong() + (boost[cand] ?: 0) * 10 + if (sameBase) 1000 else 0
+            val score = freq.toLong() + (boost[cand] ?: 0) * 10 + 1000
             if (score > bestScore) {
                 bestScore = score
                 best = cand
-                bestSameBase = sameBase
+                bestSameBase = true
+            }
+        }
+        // Lệch/đảo 1 ký tự: chỉ quét 3 nhóm độ dài len-1..len+1.
+        for (len in word.length - 1..word.length + 1) {
+            for ((cand, candBase, freq) in idx.byLen[len].orEmpty()) {
+                if (candBase == base || !editsWithinOne(word, cand)) continue
+                nearCount++
+                val score = freq.toLong() + (boost[cand] ?: 0) * 10
+                if (score > bestScore) {
+                    bestScore = score
+                    best = cand
+                    bestSameBase = false
+                }
             }
         }
         if (nearCount == 1) return best
@@ -342,7 +412,7 @@ class ContextPredictor {
         val c = current.lowercase().trim()
         if (c.isEmpty()) return
         vocabulary[c] = (vocabulary[c] ?: 0) + 1
-        vocabIndexCache = null
+        indexCache = null
         if (p.isEmpty()) return
         val transitions = bigramModel.getOrPut(p) { mutableMapOf() }
         transitions[c] = (transitions[c] ?: 0) + 1

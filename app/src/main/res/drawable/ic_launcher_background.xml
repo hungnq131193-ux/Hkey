@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Adaptive icon background: diagonal indigo/violet gradient with a soft
-  light glow bleeding in from the top-left corner for depth.
+  Adaptive icon background: diagonal cyan -> blue -> violet gradient with a
+  soft light glow bleeding in from the top-left corner for depth.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
@@ -19,7 +19,7 @@
                 android:endX="108"
                 android:endY="108">
                 <item android:color="@color/ic_launcher_background_start" android:offset="0" />
-                <item android:color="@color/ic_launcher_background_center" android:offset="0.55" />
+                <item android:color="@color/ic_launcher_background_center" android:offset="0.52" />
                 <item android:color="@color/ic_launcher_background_end" android:offset="1" />
             </gradient>
         </aapt:attr>
@@ -32,7 +32,7 @@
                 android:centerX="18"
                 android:centerY="14"
                 android:gradientRadius="58">
-                <item android:color="#3DFFFFFF" android:offset="0" />
+                <item android:color="#40FFFFFF" android:offset="0" />
                 <item android:color="#00FFFFFF" android:offset="1" />
             </gradient>
         </aapt:attr>

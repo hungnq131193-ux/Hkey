@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Themed (monochrome) layer: same "Ấ" glyph as stroked silhouette.
+  Themed (monochrome) layer: keycap outline + "Ấ" glyph as white silhouette.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -10,21 +10,27 @@
 
     <path
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="7.2"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M54,36 L39,74 M54,36 L69,74 M45.6,60.5 L62.4,60.5" />
-
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="6.2"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M45.5,30.5 L54,23.5 L62.5,30.5" />
+        android:strokeWidth="5"
+        android:fillColor="#00000000"
+        android:pathData="M41,35.5h26a8.5,8.5 0 0 1 8.5,8.5v22a8.5,8.5 0 0 1 -8.5,8.5h-26a8.5,8.5 0 0 1 -8.5,-8.5v-22a8.5,8.5 0 0 1 8.5,-8.5z" />
 
     <path
         android:strokeColor="#FFFFFF"
         android:strokeWidth="5.6"
         android:strokeLineCap="round"
-        android:pathData="M66.5,23 L73,15.5" />
+        android:strokeLineJoin="round"
+        android:pathData="M54,45.5 L44.5,68 M54,45.5 L63.5,68 M48.2,61.5 L59.8,61.5" />
+
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M48.4,40 L54,35 L59.6,40" />
+
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4.4"
+        android:strokeLineCap="round"
+        android:pathData="M63.5,31.5 L68.5,26.5" />
 </vector>

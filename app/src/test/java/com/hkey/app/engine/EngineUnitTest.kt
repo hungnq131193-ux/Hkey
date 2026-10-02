@@ -135,4 +135,18 @@ class EngineUnitTest {
         // Nhiều phương án cùng gần ("tia" ~ kia/tin/bia/...) -> không đoán bừa
         assertNull(predictor.correction("tia", null))
     }
+
+    @Test
+    fun testBundledDictionary() {
+        val predictor = ContextPredictor()
+        // Mô phỏng từ điển nạp từ res/raw/vi_dict.txt
+        predictor.addWords(listOf("nghiệm", "trường", "xuyến"))
+        // Từ có trong từ điển -> hợp lệ, không bị sửa oan
+        assertNull(predictor.correction("nghiệm", null))
+        assertNull(predictor.correction("trường", null))
+        // Prefix không dấu vẫn gợi ý được từ từ điển ngoài
+        assertTrue(predictor.completions("nghie").contains("nghiệm"))
+        // Gợi ý từ tiếp theo vẫn hoạt động sau khi index dựng lại
+        assertTrue(predictor.predictNext("hôm").contains("nay"))
+    }
 }

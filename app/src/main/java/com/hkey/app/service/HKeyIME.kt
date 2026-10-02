@@ -26,6 +26,11 @@ class HKeyIME : InputMethodService() {
     private val currentComposingWord = StringBuilder()
     private var lastCommittedWord = ""
 
+    /** Từ vừa bị auto-correct đổi: committed = từ app ghi, typed = từ user gõ,
+     *  raw = buffer phím thô để mở lại vùng composing khi hoàn tác. */
+    private class AutoFix(val committed: String, val typed: String, val raw: String)
+    private var lastAutoFix: AutoFix? = null
+
     private var candidate1: TextView? = null
     private var candidate2: TextView? = null
     private var candidate3: TextView? = null
@@ -48,6 +53,17 @@ class HKeyIME : InputMethodService() {
 
     private val prefs get() = getSharedPreferences("hkey_settings", Context.MODE_PRIVATE)
 
+    override fun onCreate() {
+        super.onCreate()
+        // Nạp từ điển ~7k từ ở thread nền để không chặn lần mở phím đầu;
+        // merge vào predictor trên main thread khi đọc xong.
+        Thread {
+            val words = resources.openRawResource(R.raw.vi_dict)
+                .bufferedReader().use { it.lineSequence().toList() }
+            repeatHandler.post { predictor.addWords(words) }
+        }.start()
+    }
+
     override fun onStartInput(info: EditorInfo, restarting: Boolean) {
         super.onStartInput(info, restarting)
         computeAutoCap(info)
@@ -58,6 +74,7 @@ class HKeyIME : InputMethodService() {
         if (!restarting) {
             currentComposingWord.clear()
             lastCommittedWord = ""
+            lastAutoFix = null
         }
         computeAutoCap(info)
         shiftOn = false
@@ -125,9 +142,9 @@ class HKeyIME : InputMethodService() {
         candidate2 = root.findViewById(R.id.candidate2)
         candidate3 = root.findViewById(R.id.candidate3)
 
-        candidate1?.setOnClickListener { acceptSuggestion(candidate1?.text.toString()) }
-        candidate2?.setOnClickListener { acceptSuggestion(candidate2?.text.toString()) }
-        candidate3?.setOnClickListener { acceptSuggestion(candidate3?.text.toString()) }
+        candidate1?.setOnClickListener { onCandidateTap(candidate1) }
+        candidate2?.setOnClickListener { onCandidateTap(candidate2) }
+        candidate3?.setOnClickListener { onCandidateTap(candidate3) }
 
         val pages = root.findViewById<FrameLayout>(R.id.kb_pages)
         lettersPage = layoutInflater.inflate(R.layout.keyboard_letters, pages, false)
@@ -268,6 +285,7 @@ class HKeyIME : InputMethodService() {
     }
 
     private fun handleCharacter(char: String) {
+        lastAutoFix = null // gõ ký tự mới = chấp nhận bản sửa, hết hoàn tác
         val c = if (shiftOn) char.uppercase() else char
         if (shiftOn) {
             shiftOn = false
@@ -344,15 +362,19 @@ class HKeyIME : InputMethodService() {
     }
 
     /** Chốt từ đang gõ; nếu từ sai chính tả và có phương án sửa đủ gần
-     *  (lệch đúng 1 ký tự, nằm trong từ điển) thì tự thay bằng từ đúng. */
+     *  (lệch đúng 1 ký tự, nằm trong từ điển) thì tự thay bằng từ đúng.
+     *  Bản tự sửa được đánh dấu để ⌫/chạm candidate hoàn tác lại chữ đã gõ. */
     private fun commitComposing() {
         if (currentComposingWord.isEmpty()) return
         val prev = contextWordBeforeCursor()
-        val typed = telexEngine.transform(currentComposingWord.toString())
-        val word = predictor.correction(typed, prev) ?: typed
+        val raw = currentComposingWord.toString()
+        val typed = telexEngine.transform(raw)
+        val fixed = predictor.correction(typed, prev)
+        val word = fixed ?: typed
         currentInputConnection?.commitText(word, 1)
         predictor.recordSequence(prev, word)
         lastCommittedWord = word
+        lastAutoFix = if (fixed != null) AutoFix(word, typed, raw) else null
         currentComposingWord.clear()
     }
 
@@ -372,10 +394,53 @@ class HKeyIME : InputMethodService() {
             } else {
                 currentInputConnection?.setComposingText(transformed, 1)
             }
-        } else {
+        } else if (!revertAutoFix()) {
             currentInputConnection?.deleteSurroundingText(1, 0)
             updateAutoShift()
         }
+        updateSuggestions()
+    }
+
+    /** Số ký tự trước con trỏ thuộc về từ vừa bị sửa (kể cả space theo sau);
+     *  0 = không đứng ngay sau từ đó -> không hoàn tác được. */
+    private fun autoFixTail(fix: AutoFix): Int {
+        val before = currentInputConnection
+            ?.getTextBeforeCursor(fix.committed.length + 1, 0) ?: return 0
+        return when {
+            before.endsWith(fix.committed + " ") -> fix.committed.length + 1
+            before.endsWith(fix.committed) -> fix.committed.length
+            else -> 0
+        }
+    }
+
+    /** ⌫ ngay sau auto-correct = hoàn tác: xóa từ đã sửa (và space vừa gõ),
+     *  trả buffer phím thô về vùng composing để user tự sửa tiếp. Từ đã gõ
+     *  được học vào từ điển nên app không sửa lại lần sau. */
+    private fun revertAutoFix(): Boolean {
+        val fix = lastAutoFix ?: return false
+        lastAutoFix = null
+        val tail = autoFixTail(fix)
+        if (tail == 0) return false
+        val ic = currentInputConnection ?: return false
+        ic.deleteSurroundingText(tail, 0)
+        currentComposingWord.append(fix.raw)
+        ic.setComposingText(telexEngine.transform(fix.raw), 1)
+        predictor.recordSequence(contextWordBeforeCursor(), fix.typed)
+        return true
+    }
+
+    /** Chạm candidate "từ đã gõ" ngay sau auto-correct = đổi lại nguyên văn
+     *  (giữ space sau từ), học từ đó để không sửa oan nữa. */
+    private fun revertCommittedFix() {
+        val fix = lastAutoFix ?: return
+        lastAutoFix = null
+        val tail = autoFixTail(fix)
+        if (tail == 0) return
+        val ic = currentInputConnection ?: return
+        ic.deleteSurroundingText(tail, 0)
+        ic.commitText(if (tail > fix.committed.length) fix.typed + " " else fix.typed, 1)
+        predictor.recordSequence(contextWordBeforeCursor(), fix.typed)
+        lastCommittedWord = fix.typed
         updateSuggestions()
     }
 
@@ -387,8 +452,19 @@ class HKeyIME : InputMethodService() {
         updateAutoShift()
     }
 
+    /** Đang hiện phương án hoàn tác auto-fix thì chạm candidate = hoàn tác. */
+    private fun onCandidateTap(tv: TextView?) {
+        val fix = lastAutoFix
+        if (fix != null && tv === candidate2 && tv?.text == fix.typed) {
+            revertCommittedFix()
+        } else {
+            acceptSuggestion(tv?.text.toString())
+        }
+    }
+
     private fun acceptSuggestion(word: String) {
         if (word.isEmpty()) return
+        lastAutoFix = null
         val prev = contextWordBeforeCursor()
         // commitText tự thay thế vùng composing nếu đang gõ dở
         currentInputConnection?.commitText("$word ", 1)
@@ -411,6 +487,15 @@ class HKeyIME : InputMethodService() {
             candidate2?.text = fix ?: current
             candidate3?.text = completions.getOrNull(1) ?: ""
         } else {
+            // Từ vừa bị auto-correct: ô giữa hiện đúng từ user đã gõ,
+            // chạm vào để khôi phục (hoặc bấm ⌫).
+            val fix = lastAutoFix
+            if (fix != null && autoFixTail(fix) > 0) {
+                candidate1?.text = ""
+                candidate2?.text = fix.typed
+                candidate3?.text = ""
+                return
+            }
             // Đã chốt từ: gợi ý từ tiếp theo dựa vào từ ngay trước con trỏ
             val next = predictor.predictNext(ctx)
             candidate1?.text = next.getOrNull(1) ?: ""

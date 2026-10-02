@@ -1,7 +1,7 @@
 <resources>
-    <color name="ic_launcher_background_start">#5364D8</color>
-    <color name="ic_launcher_background_center">#3F37A8</color>
-    <color name="ic_launcher_background_end">#1B1440</color>
+    <color name="ic_launcher_background_start">#22D3EE</color>
+    <color name="ic_launcher_background_center">#3B82F6</color>
+    <color name="ic_launcher_background_end">#7C3AED</color>
 
     <color name="kb_background">#191B1F</color>
     <color name="kb_candidate_bar">#22252A</color>

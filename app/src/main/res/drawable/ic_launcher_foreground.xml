@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Foreground: geometric "Ấ" built from round-cap strokes — two A legs +
-  crossbar in white gradient, circumflex in lighter white, sắc tick in
-  orange. Reads as "Vietnamese" at launcher size.
+  Foreground: a keyboard keycap carrying a geometric "Ấ" — white key tile
+  with a darker bottom lip, blue/violet glyph, orange sắc tick. Reads as
+  "Vietnamese keyboard" at launcher size.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
@@ -11,52 +11,72 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- soft shadow under the glyph -->
+    <!-- shadow under the keycap -->
     <path
         android:fillColor="#33000000"
-        android:pathData="M38,78a17,3.6 0 1,0 34,0a17,3.6 0 1,0 -34,0z" />
+        android:pathData="M30,79.5a24,4.4 0 1,0 48,0a24,4.4 0 1,0 -48,0z" />
 
-    <!-- A legs + crossbar -->
+    <!-- keycap bottom lip -->
     <path
-        android:strokeWidth="7.2"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M54,36 L39,74 M54,36 L69,74 M45.6,60.5 L62.4,60.5">
-        <aapt:attr name="android:strokeColor">
+        android:fillColor="#AEB9DE"
+        android:pathData="M41,37.5h26a10,10 0 0 1 10,10v22a10,10 0 0 1 -10,10h-26a10,10 0 0 1 -10,-10v-22a10,10 0 0 1 10,-10z" />
+
+    <!-- keycap face -->
+    <path android:pathData="M41,34h26a10,10 0 0 1 10,10v22a10,10 0 0 1 -10,10h-26a10,10 0 0 1 -10,-10v-22a10,10 0 0 1 10,-10z">
+        <aapt:attr name="android:fillColor">
             <gradient
                 android:type="linear"
                 android:startX="54"
-                android:startY="36"
+                android:startY="34"
                 android:endX="54"
-                android:endY="74">
+                android:endY="76">
                 <item android:color="#FFFFFF" android:offset="0" />
-                <item android:color="#DCE1F9" android:offset="1" />
+                <item android:color="#E3E9F9" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- "Ấ": A legs + crossbar -->
+    <path
+        android:strokeWidth="6.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M54,44.5 L43.5,69 M54,44.5 L64.5,69 M47.6,62 L60.4,62">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="43.5"
+                android:startY="44.5"
+                android:endX="64.5"
+                android:endY="69">
+                <item android:color="#2563EB" android:offset="0" />
+                <item android:color="#7C3AED" android:offset="1" />
             </gradient>
         </aapt:attr>
     </path>
 
     <!-- circumflex -->
     <path
-        android:strokeWidth="6.2"
+        android:strokeWidth="5.4"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeColor="#EEF1FE"
-        android:pathData="M45.5,30.5 L54,23.5 L62.5,30.5" />
+        android:strokeColor="#4F46E5"
+        android:pathData="M47.8,39.5 L54,34.2 L60.2,39.5" />
 
     <!-- sắc tick -->
     <path
-        android:strokeWidth="5.6"
+        android:strokeWidth="4.8"
         android:strokeLineCap="round"
-        android:pathData="M66.5,23 L73,15.5">
+        android:pathData="M64,31 L69.5,25.5">
         <aapt:attr name="android:strokeColor">
             <gradient
                 android:type="linear"
-                android:startX="66.5"
-                android:startY="23"
-                android:endX="73"
-                android:endY="15.5">
-                <item android:color="#FFCC80" android:offset="0" />
-                <item android:color="#FF8A3D" android:offset="1" />
+                android:startX="64"
+                android:startY="31"
+                android:endX="69.5"
+                android:endY="25.5">
+                <item android:color="#FBBF24" android:offset="0" />
+                <item android:color="#F97316" android:offset="1" />
             </gradient>
         </aapt:attr>
     </path>

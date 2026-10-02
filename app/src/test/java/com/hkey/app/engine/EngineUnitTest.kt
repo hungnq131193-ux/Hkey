@@ -34,6 +34,9 @@ class EngineUnitTest {
         assertEquals("mượn", telex.transform("muwownj"))
         // Gõ đúp phím dấu = in ký tự thật
         assertEquals("bas", telex.transform("bass"))
+        // 'z' huỷ dấu: phím dấu thành chữ thường
+        assertEquals("hoas", telex.transform("hoasz"))
+        assertEquals("tus", telex.transform("tusz"))
         // Viết hoa chữ đầu
         assertEquals("Đi", telex.transform("Ddi"))
     }

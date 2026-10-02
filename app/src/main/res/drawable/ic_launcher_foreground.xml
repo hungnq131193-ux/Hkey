@@ -1,26 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Adaptive icon foreground: a keyboard key cap with the letter "H" and a
-  Telex-style circumflex accent floating above it.
+  Adaptive icon foreground: a polished key cap with subtle vertical gradient
+  and outline, bold indigo "H", and a white Telex circumflex accent floating
+  above — reads as "keyboard + Vietnamese" at a glance.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
     <path
-        android:fillColor="#E8EAED"
-        android:pathData="M38,36 h32 q8,0 8,8 v24 q0,8 -8,8 h-32 q-8,0 -8,-8 v-24 q0,-8 8,-8 z" />
+        android:strokeColor="#B9C0CE"
+        android:strokeWidth="1.2"
+        android:pathData="M41,38 h26 q9,0 9,9 v20 q0,9 -9,9 h-26 q-9,0 -9,-9 v-20 q0,-9 9,-9 z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54"
+                android:startY="38"
+                android:endX="54"
+                android:endY="76">
+                <item android:color="#FFFFFF" android:offset="0" />
+                <item android:color="#DDE1EA" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
 
     <path
-        android:fillColor="#303F9F"
-        android:pathData="M44,44h4v24h-4z M60,44h4v24h-4z M44,53h20v6h-20z" />
+        android:fillColor="#3F51B5"
+        android:pathData="M43.5,46h5.5v7.5h10v-7.5h5.5v22h-5.5v-9h-10v9h-5.5z" />
 
     <path
-        android:strokeColor="#E8EAED"
+        android:strokeColor="#FFFFFF"
         android:strokeWidth="3.5"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M48,32 L54,25 L60,32" />
+        android:pathData="M48,33 L54,26.5 L60,33" />
 </vector>

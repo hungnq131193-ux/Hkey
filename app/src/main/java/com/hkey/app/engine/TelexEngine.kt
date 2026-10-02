@@ -40,8 +40,12 @@ class TelexEngine {
         var text = input.lowercase()
 
         var toneIdx = 0
-        val last = text.last()
-        if (toneMap.containsKey(last)) {
+        var last = text.last()
+        // 'z' sau phím dấu = huỷ dấu, in ký tự dấu thành chữ thường ("hoasz" -> "hoas")
+        if (last == 'z' && text.length >= 2 && toneMap.containsKey(text[text.length - 2])) {
+            text = text.dropLast(1)
+            last = text.last()
+        } else if (toneMap.containsKey(last)) {
             if (text.length >= 2 && text[text.length - 2] == last) {
                 text = text.dropLast(1) // gõ đúp = in ký tự thật
             } else if (text.dropLast(1).any { it in plainVowels || it in markedVowels }) {

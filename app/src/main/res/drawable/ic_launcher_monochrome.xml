@@ -12,7 +12,7 @@
     <path
         android:fillColor="#FFFFFF"
         android:fillType="evenOdd"
-        android:pathData="M38,36 h32 q8,0 8,8 v24 q0,8 -8,8 h-32 q-8,0 -8,-8 v-24 q0,-8 8,-8 z M44,44h4v24h-4z M60,44h4v24h-4z M44,53h20v6h-20z" />
+        android:pathData="M41,38 h26 q9,0 9,9 v20 q0,9 -9,9 h-26 q-9,0 -9,-9 v-20 q0,-9 9,-9 z M43.5,46h5.5v22h-5.5z M59,46h5.5v22h-5.5z M43.5,53.5h21v5.5h-21z" />
 
     <path
         android:fillColor="#FFFFFF"

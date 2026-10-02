@@ -1,5 +1,6 @@
 package com.hkey.app.service
 
+import android.content.Context
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +10,7 @@ import android.view.MotionEvent
 import android.view.SoundEffectConstants
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import android.widget.TextView
 import com.hkey.app.R
@@ -41,6 +43,19 @@ class HKeyIME : InputMethodService() {
         }
     }
 
+    private val prefs get() = getSharedPreferences("hkey_settings", Context.MODE_PRIVATE)
+
+    override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        if (!restarting) {
+            currentComposingWord.clear()
+            lastCommittedWord = ""
+        }
+        shiftOn = false
+        // Inflate lại để settings (cao/rộng/rung) áp dụng ngay lần mở tiếp theo
+        setInputView(onCreateInputView())
+    }
+
     override fun onCreateInputView(): View {
         val root = layoutInflater.inflate(R.layout.keyboard_view, null)
 
@@ -62,6 +77,7 @@ class HKeyIME : InputMethodService() {
         pages.addView(symbolsPage)
         symbolsPage?.visibility = View.GONE
 
+        applySizeSettings()
         bindKeys(lettersPage)
         bindKeys(symbolsPage)
         updateSuggestions()
@@ -69,9 +85,51 @@ class HKeyIME : InputMethodService() {
         return root
     }
 
+    private fun applySizeSettings() {
+        val heightDp = 52 * prefs.getInt("kb_height", 100) / 100
+        val sideDp = prefs.getInt("kb_side", 0)
+        val density = resources.displayMetrics.density
+        val heightPx = (heightDp * density).toInt()
+        val sidePx = (sideDp * density).toInt()
+
+        for (page in listOf(lettersPage, symbolsPage)) {
+            page?.setPadding(sidePx + (3 * density).toInt(), page?.paddingTop ?: 0,
+                sidePx + (3 * density).toInt(), page?.paddingBottom ?: 0)
+        }
+        forEachView(lettersPage) { v -> if (v.tag != null) v.layoutParams?.height = heightPx }
+        forEachView(symbolsPage) { v -> if (v.tag != null) v.layoutParams?.height = heightPx }
+    }
+
     private fun pressFeedback(v: View) {
-        v.playSoundEffect(SoundEffectConstants.CLICK)
-        v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        if (prefs.getBoolean("key_sound", true)) {
+            v.playSoundEffect(SoundEffectConstants.CLICK)
+        }
+        if (prefs.getBoolean("vibrate", true)) {
+            v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        }
+    }
+
+    /** Bấm là ăn ngay ở ACTION_DOWN, không chờ nhả tay. isPressed giữ hiệu ứng lún. */
+    private fun bindKey(tv: TextView, action: () -> Unit) {
+        tv.setOnTouchListener { v, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.isPressed = true
+                    pressFeedback(v)
+                    action()
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    v.isPressed = e.x >= 0 && e.x < v.width && e.y >= 0 && e.y < v.height
+                    true
+                }
+                else -> {
+                    v.isPressed = false
+                    true
+                }
+            }
+        }
+        tv.setOnClickListener { action() } // đường a11y/performClick
     }
 
     private fun bindKeys(root: View?) {
@@ -81,20 +139,20 @@ class HKeyIME : InputMethodService() {
             when {
                 tag.startsWith("ch:") -> {
                     letterKeys.add(tv)
-                    tv.setOnClickListener { pressFeedback(tv); handleCharacter(tag.removePrefix("ch:")) }
+                    bindKey(tv) { handleCharacter(tag.removePrefix("ch:")) }
                 }
                 tag.startsWith("p:") -> {
-                    tv.setOnClickListener { pressFeedback(tv); handlePunct(tag.removePrefix("p:")) }
+                    bindKey(tv) { handlePunct(tag.removePrefix("p:")) }
                 }
-                tag == "fn:space" -> tv.setOnClickListener { pressFeedback(tv); handleSpace() }
-                tag == "fn:enter" -> tv.setOnClickListener { pressFeedback(tv); handleEnter() }
+                tag == "fn:space" -> bindKey(tv) { handleSpace() }
+                tag == "fn:enter" -> bindKey(tv) { handleEnter() }
                 tag == "fn:del" -> bindDeleteKey(tv)
                 tag == "fn:shift" -> {
                     shiftKey = tv
-                    tv.setOnClickListener { pressFeedback(tv); toggleShift() }
+                    bindKey(tv) { toggleShift() }
                 }
-                tag == "fn:sym" -> tv.setOnClickListener { pressFeedback(tv); showPage(symbolsPage) }
-                tag == "fn:abc" -> tv.setOnClickListener { pressFeedback(tv); showPage(lettersPage) }
+                tag == "fn:sym" -> bindKey(tv) { showPage(symbolsPage) }
+                tag == "fn:abc" -> bindKey(tv) { showPage(lettersPage) }
             }
         }
     }
@@ -111,19 +169,21 @@ class HKeyIME : InputMethodService() {
         tv.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    v.isPressed = true
                     pressFeedback(v)
                     handleDelete()
                     repeatHandler.postDelayed(deleteRepeat, 400)
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    v.isPressed = false
                     repeatHandler.removeCallbacks(deleteRepeat)
-                    v.performClick()
                     true
                 }
-                else -> false
+                else -> true
             }
         }
+        tv.setOnClickListener { handleDelete() }
     }
 
     private fun showPage(page: View?) {

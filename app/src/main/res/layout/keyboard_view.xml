@@ -112,7 +112,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:layout_marginTop="4dp">
-        <Button android:id="@+id/key_space" style="@style/Widget.Material3.Button.FilledButton" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="4" android:text="Khoảng cách" />
+        <Button android:id="@+id/key_space" style="@style/Widget.Material3.Button" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="4" android:text="Khoảng cách" />
         <Button android:id="@+id/key_enter" style="@style/Widget.Material3.Button.TonalButton" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="↵" />
     </LinearLayout>
 

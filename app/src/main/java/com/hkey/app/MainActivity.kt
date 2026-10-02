@@ -48,6 +48,17 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
 
+        // Xoá file dữ liệu học + đặt cờ để IME (nếu đang chạy) dọn bộ nhớ.
+        findViewById<Button>(R.id.btn_clear_learning)?.setOnClickListener {
+            java.io.File(filesDir, "learned_data.tsv").delete()
+            java.io.File(filesDir, "learned_data.tsv.tmp").delete()
+            prefs.edit().putBoolean("learning_cleared", true).apply()
+            findViewById<TextView>(R.id.tv_learning_cleared)?.apply {
+                text = "Đã xóa dữ liệu học."
+                visibility = android.view.View.VISIBLE
+            }
+        }
+
         val tvSide = findViewById<TextView>(R.id.tv_side_label)
         val sbSide = findViewById<SeekBar>(R.id.sb_side)
         val side = prefs.getInt("kb_side", 0)

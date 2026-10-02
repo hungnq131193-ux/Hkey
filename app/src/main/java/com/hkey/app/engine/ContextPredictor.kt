@@ -1,13 +1,38 @@
 package com.hkey.app.engine
 
 /**
- * Next-word prediction (bigram), prefix completion (so khớp cả dạng không
- * dấu để gợi ý ngay khi đang gõ), and conservative correction. Correction
- * chỉ sửa khi từ lệch đúng 1 ký tự so với từ có trong từ điển.
+ * Next-word prediction (trigram -> bigram -> unigram backoff), prefix
+ * completion (so khớp cả dạng không dấu), and conservative correction.
+ * Lớp corpus (bigramModel/trigramModel/bosTop nạp từ res/raw) tách với lớp
+ * cá nhân (userBigram + Entry.personal) để xoá/lưu dữ liệu học riêng.
  */
 class ContextPredictor {
 
-    private val vocabulary = mutableMapOf<String, Int>().apply {
+    /** Hệ số chấm điểm — gom một chỗ để chỉnh bằng bộ đánh giá offline (3.7). */
+    data class Weights(
+        var triPresent: Long = 1_000_000_000L, // có trigram thắng mọi backoff
+        var tri: Long = 50_000L,
+        var bi: Long = 200L,
+        var user: Long = 2_000_000L,           // bigram cá nhân (đã học)
+        var uni: Long = 1L,
+        var personalBoost: Long = 200_000L,    // freq cá nhân trong completion/correction
+        var adjacency: Long = 300_000_000L,    // thay 1 ký tự bằng phím kề QWERTY
+        var sameBase: Long = 50_000_000L,      // ứng viên cùng thân từ (lệch dấu)
+        var minMargin: Double = 1.2            // điểm thắng phải vượt á quân ×minMargin
+    )
+
+    var weights = Weights()
+
+    private val deaccentRows = listOf(
+        "aáàảãạăắằẳẵặâấầẩẫậ",
+        "eéèẻẽẹêếềểễệ",
+        "iíìỉĩị",
+        "oóòỏõọôốồổỗộơớờởỡợ",
+        "uúùủũụưứừửữự",
+        "yýỳỷỹỵ"
+    )
+
+    private val vocabulary = mutableMapOf<String, Entry>().apply {
         // Từ rất phổ biến
         for (w in listOf(
             "là", "của", "và", "có", "không", "được", "tôi", "bạn", "anh", "em",
@@ -15,7 +40,7 @@ class ContextPredictor {
             "thì", "mà", "còn", "đã", "đang", "sẽ", "vẫn", "cũng", "rất", "nhé",
             "ạ", "vâng", "người", "cảm", "ơn", "nước", "hôm", "nay", "học",
             "ăn", "về", "nói", "muốn", "xem", "đến", "một", "hai", "bao", "nhiêu"
-        )) put(w, 500)
+        )) put(w, Entry(w, deaccent(w), 500))
         // Phổ biến
         for (w in listOf(
             "mình", "họ", "ta", "nó", "ấy", "cậu", "chú", "bác", "cô", "ông", "bà",
@@ -44,7 +69,7 @@ class ContextPredictor {
             "đếm", "chọn", "tìm", "kiếm", "tải", "đăng", "nhập", "lưu", "xóa",
             "xoá", "huỷ", "ghi", "chép", "chụp", "quay", "dừng", "tiếp", "tục",
             "thử", "thắng", "thua", "sống", "chết", "sinh", "kết", "bắt"
-        )) put(w, 350)
+        )) put(w, Entry(w, deaccent(w), 350))
         // Danh từ thông dụng
         for (w in listOf(
             "cơm", "phở", "bún", "cháo", "bánh", "mì", "trà", "sữa", "bia",
@@ -81,7 +106,7 @@ class ContextPredictor {
             "trang", "lạt", "vũng", "nhơn", "quốc", "long", "miền", "bắc",
             "tỉnh", "thành", "quận", "huyện", "xã", "phường", "thôn", "làng",
             "khu", "tổ", "quê", "tivi"
-        )) put(w, 220)
+        )) put(w, Entry(w, deaccent(w), 220))
         // Tính từ / phó từ
         for (w in listOf(
             "đẹp", "xấu", "tốt", "dở", "ngon", "ngọt", "đắng", "chua", "cay",
@@ -99,7 +124,8 @@ class ContextPredictor {
             "nhiều", "ít", "vài", "mấy", "đầy", "vơi", "thiếu", "thừa", "đủ",
             "tuyệt", "dễ", "ghê", "giỏi", "kém", "ngu", "khôn", "ngoan",
             "hư", "lười", "chăm", "siêng", "khoẻ"
-        )) put(w, 200)
+        )) put(w, Entry(w, deaccent(w), 200))
+        values.forEach { it.fromDict = true }
     }
 
     private val bigramModel = mutableMapOf<String, MutableMap<String, Int>>(
@@ -197,7 +223,7 @@ class ContextPredictor {
         "muốn" to mutableMapOf("đi" to 70, "ăn" to 60, "mua" to 60, "xem" to 50, "nói" to 50, "hỏi" to 50, "gì" to 40, "biết" to 40, "gặp" to 40, "ngủ" to 30),
         "cần" to mutableMapOf("gì" to 60, "tiền" to 50, "giúp" to 50, "mua" to 40, "gấp" to 40, "làm" to 40, "phải" to 30),
         "phải" to mutableMapOf("đi" to 60, "làm" to 60, "không" to 60, "học" to 40, "trả" to 30, "chờ" to 30),
-        "được" to mutableMapOf("không" to 80, "rồi" to 70, "không" to 80, "chưa" to 60, "gì" to 40, "luôn" to 40),
+        "được" to mutableMapOf("không" to 80, "rồi" to 70, "chưa" to 60, "gì" to 40, "luôn" to 40),
         "biết" to mutableMapOf("gì" to 60, "rồi" to 60, "không" to 60, "chưa" to 50, "sao" to 40, "đâu" to 40),
         "cũng" to mutableMapOf("được" to 70, "không" to 60, "có" to 50, "thế" to 40, "vậy" to 40, "đi" to 40),
         "vẫn" to mutableMapOf("chưa" to 60, "đang" to 50, "còn" to 50, "không" to 40, "thế" to 40),
@@ -208,20 +234,54 @@ class ContextPredictor {
         "hết" to mutableMapOf("rồi" to 80, "tiền" to 70, "pin" to 60, "hàng" to 50, "việc" to 40, "chưa" to 30),
         "xong" to mutableMapOf("rồi" to 90, "việc" to 60, "chưa" to 40),
         "mọi" to mutableMapOf("người" to 100, "thứ" to 50, "lúc" to 40, "việc" to 40),
-        "người" to mutableMapOf("ta" to 60, "khác" to 50, "đẹp" to 40, "yêu" to 40, "nước" to 30),
-        "thế" to mutableMapOf("nào" to 100, "này" to 60, "không" to 40, "giới" to 30)
+        "người" to mutableMapOf("ta" to 60, "khác" to 50, "đẹp" to 40, "yêu" to 40, "nước" to 30)
     )
 
-    private val deaccentRows = listOf(
-        "aáàảãạăắằẳẵặâấầẩẫậ",
-        "eéèẻẽẹêếềểễệ",
-        "iíìỉĩị",
-        "oóòỏõọôốồổỗộơớờởỡợ",
-        "uúùủũụưứừửữự",
-        "yýỳỷỹỵ"
-    )
+    /** Lớp corpus lưu bằng khóa số + mảng phẳng (đỡ heap ~60MB so với map
+     *  lồng nhau — ngân sách ≤15MB, 3.2). Mỗi từ có Entry.mid (id < 2^20):
+     *  - biKey = midPrev shl 20 | midNext   (sắp tăng dần)
+     *  - triKey = midP2 shl 40 | midP1 shl 20 | midNext
+     * Tra cứu bằng nhị phân trên đoạn tiền tố. */
+    private var biKeys = LongArray(0)
+    private var biCnt = IntArray(0)
+    private var triKeys = LongArray(0)
+    private var triCnt = IntArray(0)
+    private var idWord = emptyArray<String>()
 
-    /** Bỏ hết dấu thanh + dấu phụ để so khớp ("hô" -> "ho", "điện" -> "dien"). */
+    /** Bigram cá nhân (tự học) — tách khỏi corpus để xoá/lưu riêng (3.6). */
+    private val userBigram = mutableMapOf<String, MutableMap<String, Int>>()
+
+    /** Từ hay mở đầu câu (đếm từ token đầu câu của corpus). */
+    private var bosTop: List<String> = emptyList()
+
+    private fun midOf(w: String) = vocabulary[w]?.mid ?: -1
+
+    /** Vị trí đầu tiên keys[i] >= key (hoặc size nếu không có). */
+    private fun lowerBound(keys: LongArray, key: Long): Int {
+        var lo = 0
+        var hi = keys.size
+        while (lo < hi) {
+            val mid = (lo + hi) ushr 1
+            if (keys[mid] < key) lo = mid + 1 else hi = mid
+        }
+        return lo
+    }
+
+    /** Số đếm bigram corpus (p1 -> w), 0 nếu không có. */
+    private fun corpusBigram(idP: Int, idW: Int): Int {
+        if (idP < 0 || idW < 0) return 0
+        val i = lowerBound(biKeys, (idP.toLong() shl 20) or idW.toLong())
+        return if (i < biKeys.size &&
+            biKeys[i] == ((idP.toLong() shl 20) or idW.toLong())) biCnt[i] else 0
+    }
+
+    /** Số đếm trigram corpus (p2, p1 -> w), 0 nếu không có. */
+    private fun corpusTrigram(idP2: Int, idP1: Int, idW: Int): Int {
+        if (idP2 < 0 || idP1 < 0 || idW < 0) return 0
+        val key = (idP2.toLong() shl 40) or (idP1.toLong() shl 20) or idW.toLong()
+        val i = lowerBound(triKeys, key)
+        return if (i < triKeys.size && triKeys[i] == key) triCnt[i] else 0
+    }
     private fun deaccent(s: String): String {
         val sb = StringBuilder(s.length)
         for (c in s) {
@@ -233,35 +293,103 @@ class ContextPredictor {
         return sb.toString()
     }
 
-    /**
-     * Index dựng một lần trên vocabulary, invalidate khi tự học/nạp từ điển.
-     * Giữ O(1)-O(log n) cho mọi truy vấn khi từ điển lên tới hàng chục nghìn từ:
-     * sorted+bases cho prefix search, byBase cho lỗi đặt dấu, byLen cho lỗi
-     * lệch 1 ký tự, top cho fallback của predictNext.
-     */
-    private class Index(
-        val sorted: List<Triple<String, String, Int>>, // (từ, không dấu, freq) sắp theo base
-        val bases: Array<String>,                       // base song song với sorted, để binary search
-        val byBase: Map<String, List<Pair<String, Int>>>,
-        val byLen: Map<Int, List<Triple<String, String, Int>>>,
-        val top: List<String>
+    /** Một mục từ điển: freq = tần suất corpus/từ điển, personal = số lần
+     *  người dùng gõ, lastSeen phục vụ eviction; các chỉ mục giữ tham chiếu
+     *  chung nên đổi số liệu không cần dựng lại. */
+    internal class Entry(
+        val word: String,
+        val base: String,
+        var freq: Int,
+        var personal: Int = 0,
+        var lastSeen: Long = 0,
+        var fromDict: Boolean = false,
+        var mid: Int = -1 // id trong lớp corpus (-1 = không có n-gram corpus)
     )
 
+    /**
+     * Index cập nhật tăng dần: sorted/byBase/byLen là danh sách mutable giữ
+     * tham chiếu Entry; từ mới chèn đúng vị trí (nhị phân), freq đổi chỉ cần
+     * đánh dấu topCache bẩn. Chỉ dựng lại khi nạp từ điển hàng loạt.
+     */
+    internal class Index(
+        val sorted: ArrayList<Entry>,                    // sắp theo base
+        val byBase: HashMap<String, MutableList<Entry>>,
+        val byLen: HashMap<Int, MutableList<Entry>>
+    ) {
+        var topCache: List<String>? = null
+
+        fun insert(e: Entry) {
+            var lo = 0
+            var hi = sorted.size
+            while (lo < hi) {
+                val mid = (lo + hi) ushr 1
+                if (sorted[mid].base < e.base) lo = mid + 1 else hi = mid
+            }
+            sorted.add(lo, e)
+            byBase.getOrPut(e.base) { mutableListOf() }.add(e)
+            byLen.getOrPut(e.word.length) { mutableListOf() }.add(e)
+            topCache = null
+        }
+
+        fun remove(e: Entry) {
+            sorted.remove(e) // hiếm gọi (eviction/xoá học) nên O(n) chấp nhận
+            byBase[e.base]?.remove(e)
+            byLen[e.word.length]?.remove(e)
+            topCache = null
+        }
+
+        fun top(): List<String> = topCache
+            ?: sorted.asSequence().filter { it.freq >= 2 || it.personal >= 2 }
+                .sortedByDescending { it.freq + it.personal }.take(3)
+                .map { it.word }.toList()
+                .also { topCache = it }
+    }
+
     private var indexCache: Index? = null
+    private var vocabVersion = 0 // tăng khi vocabulary thêm từ mới (kiểm chồng snapshot)
+
+    /** Từ đủ điều kiện gợi ý: từ điển/corpus (freq≥2) hoặc từ học ≥2 lần. */
+    private fun eligible(e: Entry) = e.freq >= 2 || e.personal >= 2
+
+    /** Điểm ngữ cảnh backoff: trigram > bigram > unigram + lớp cá nhân.
+     *  bigramModel (viết tay) là lớp seed nhỏ giữ hành vi khi chưa nạp corpus. */
+    private fun contextScore(p2: String, p1: String, w: String): Long {
+        val W = weights
+        val id1 = midOf(p1)
+        val idw = midOf(w)
+        val t = if (p2.isEmpty()) 0 else corpusTrigram(midOf(p2), id1, idw)
+        val b = corpusBigram(id1, idw) + (bigramModel[p1]?.get(w) ?: 0)
+        val u = userBigram[p1]?.get(w) ?: 0
+        val uni = vocabulary[w]?.freq ?: 0
+        return (if (t > 0) W.triPresent else 0) + t * W.tri + b * W.bi +
+            u * W.user + uni * W.uni
+    }
     private val index: Index
         get() = indexCache ?: buildIndex().also { indexCache = it }
 
-    private fun buildIndex(): Index {
-        val entries = vocabulary.entries.map { Triple(it.key, deaccent(it.key), it.value) }
-        val sorted = entries.sortedBy { it.second }
-        val byBase = HashMap<String, MutableList<Pair<String, Int>>>()
-        val byLen = HashMap<Int, MutableList<Triple<String, String, Int>>>()
+    private fun buildIndex(): Index = buildIndexFrom(vocabulary.values.toList())
+
+    /** Snapshot vocab để build chỉ mục ở thread nền (gọi trên main thread). */
+    internal fun snapshotForIndex(): Pair<List<Entry>, Int> =
+        vocabulary.values.toList() to vocabVersion
+
+    /** Thuần tính toán trên snapshot — chạy được ở thread nền. Entry được
+     *  share tham chiếu nên freq đổi song song vẫn thấy. */
+    internal fun buildIndexFrom(entries: List<Entry>): Index {
+        val sorted = ArrayList(entries.sortedBy { it.base })
+        val byBase = HashMap<String, MutableList<Entry>>()
+        val byLen = HashMap<Int, MutableList<Entry>>()
         for (e in entries) {
-            byBase.getOrPut(e.second) { mutableListOf() }.add(e.first to e.third)
-            byLen.getOrPut(e.first.length) { mutableListOf() }.add(e)
+            byBase.getOrPut(e.base) { mutableListOf() }.add(e)
+            byLen.getOrPut(e.word.length) { mutableListOf() }.add(e)
         }
-        val top = entries.sortedByDescending { it.third }.map { it.first }.take(3)
-        return Index(sorted, Array(sorted.size) { sorted[it].second }, byBase, byLen, top)
+        return Index(sorted, byBase, byLen)
+    }
+
+    /** Lắp chỉ mục dựng nền (main thread). Bỏ qua nếu vocab đã thêm từ mới
+     *  sau snapshot — query kế sẽ tự dựng lại chỉ mục đủ từ. */
+    internal fun installIndex(idx: Index, version: Int) {
+        if (version == vocabVersion) indexCache = idx
     }
 
     /** Nạp thêm từ vào từ điển (file res/raw hoặc từ tự học). Từ đã có giữ
@@ -271,102 +399,322 @@ class ContextPredictor {
         for (w in words) {
             val k = w.trim().lowercase()
             if (k.isNotEmpty() && !vocabulary.containsKey(k)) {
-                vocabulary[k] = freq
+                vocabulary[k] = Entry(k, deaccent(k), freq, fromDict = true)
                 changed = true
             }
         }
-        if (changed) indexCache = null
+        if (changed) {
+            vocabVersion++
+            indexCache = null
+        }
     }
 
-    /** Vị trí đầu tiên có bases[i] >= key. */
-    private fun lowerBound(bases: Array<String>, key: String): Int {
+    /** Nạp mô hình corpus từ vi_model.tsv (luồng nền parse xong, gọi trên
+     *  main thread). Tần suất thật thay cho điểm phẳng 100 (G1). */
+    fun loadModel(
+        unigrams: Map<String, Int>,
+        bigrams: Map<String, Map<String, Int>>,
+        trigrams: Map<String, Map<String, Int>>,
+        bos: List<String>
+    ) {
+        for ((w, f) in unigrams) {
+            val e = vocabulary[w]
+            if (e == null) {
+                vocabulary[w] = Entry(w, deaccent(w), f, fromDict = true)
+            } else {
+                e.freq = f // corpus là tần suất thật
+                e.fromDict = true
+            }
+        }
+        // Gán id corpus cho mọi từ (id < 2^20 — vocab thực tế ~50k, dư rất xa).
+        // Từ thêm sau (học) giữ mid=-1: không có n-gram corpus, đúng thực tế.
+        if (vocabulary.size < (1 shl 20)) {
+            var id = 0
+            for (e in vocabulary.values) e.mid = id++
+            idWord = Array(vocabulary.size) { "" }
+            for (e in vocabulary.values) idWord[e.mid] = e.word
+            buildFlatNgrams(bigrams, trigrams)
+        }
+        bosTop = bos.filter { vocabulary.containsKey(it) }
+        vocabVersion++
+        indexCache = null
+    }
+
+    private fun buildFlatNgrams(
+        bigrams: Map<String, Map<String, Int>>,
+        trigrams: Map<String, Map<String, Int>>
+    ) {
+        // Mảng phẳng sắp theo khóa — tra bằng nhị phân.
+        val bi = ArrayList<Pair<Long, Int>>(bigrams.values.sumOf { it.size })
+        for ((p, tr) in bigrams) {
+            val ip = midOf(p)
+            for ((n, c) in tr) {
+                val iN = midOf(n)
+                if (ip >= 0 && iN >= 0) bi.add((ip.toLong() shl 20 or iN.toLong()) to c)
+            }
+        }
+        bi.sortBy { it.first }
+        biKeys = LongArray(bi.size) { bi[it].first }
+        biCnt = IntArray(bi.size) { bi[it].second }
+        val tri = ArrayList<Pair<Long, Int>>(trigrams.values.sumOf { it.size })
+        for ((k, tr) in trigrams) {
+            val i2 = midOf(k.substringBefore('|'))
+            val i1 = midOf(k.substringAfter('|'))
+            for ((n, c) in tr) {
+                val iN = midOf(n)
+                if (i2 >= 0 && i1 >= 0 && iN >= 0) tri.add(
+                    (i2.toLong() shl 40) or (i1.toLong() shl 20) or iN.toLong() to c
+                )
+            }
+        }
+        tri.sortBy { it.first }
+        triKeys = LongArray(tri.size) { tri[it].first }
+        triCnt = IntArray(tri.size) { tri[it].second }
+    }
+
+    /** Dữ liệu học để lưu/xoá (3.6): từ có personal>0 hoặc từ học mới,
+     *  kèm userBigram. Đối xứng với importLearned. */
+    fun exportLearned(): Pair<List<Triple<String, Int, Long>>, List<Triple<String, String, Int>>> {
+        val words = vocabulary.values.filter { it.personal > 0 || !it.fromDict }
+            .map { Triple(it.word, it.personal, it.lastSeen) }
+        val bis = userBigram.flatMap { (p, m) -> m.map { (n, c) -> Triple(p, n, c) } }
+        return words to bis
+    }
+
+    fun importLearned(words: List<Triple<String, Int, Long>>, bis: List<Triple<String, String, Int>>) {
+        var changed = false
+        for ((w, p, t) in words) {
+            val e = vocabulary[w]
+            if (e != null) {
+                e.personal = p; e.lastSeen = t
+            } else {
+                vocabulary[w] = Entry(w, deaccent(w), 0, p, t)
+                indexCache?.insert(vocabulary.getValue(w))
+                changed = true
+            }
+        }
+        for ((p, n, c) in bis) {
+            userBigram.getOrPut(p) { mutableMapOf() }[n] = c
+        }
+        if (changed) vocabVersion++
+        indexCache?.topCache = null
+    }
+
+    /** Nút "Xóa dữ liệu học": bỏ từ học, reset số liệu cá nhân trên từ điển. */
+    fun clearLearned() {
+        val learned = vocabulary.values.filter { !it.fromDict }
+        vocabulary.values.removeAll(learned.toSet())
+        indexCache?.let { idx -> learned.forEach { idx.remove(it) } }
+        for (e in vocabulary.values) {
+            e.personal = 0
+            e.lastSeen = 0
+        }
+        userBigram.clear()
+        indexCache?.topCache = null
+    }
+
+    /** Giới hạn số từ học; vượt thì bỏ mục ít dùng/cũ nhất (3.6). */
+    fun boundLearned(max: Int) {
+        val learned = vocabulary.values.filter { !it.fromDict }
+            .sortedWith(compareBy({ it.personal }, { it.lastSeen }))
+        val idx = indexCache
+        for (e in learned.take((learned.size - max).coerceAtLeast(0))) {
+            vocabulary.remove(e.word)
+            idx?.remove(e)
+        }
+        if (learned.size > max) vocabVersion++
+    }
+
+    /** Vị trí đầu tiên có sorted[i].base >= key. */
+    private fun lowerBound(sorted: List<Entry>, key: String): Int {
         var lo = 0
-        var hi = bases.size
+        var hi = sorted.size
         while (lo < hi) {
             val mid = (lo + hi) ushr 1
-            if (bases[mid] < key) lo = mid + 1 else hi = mid
+            if (sorted[mid].base < key) lo = mid + 1 else hi = mid
         }
         return lo
     }
 
-    /** Gợi ý từ tiếp theo theo từ liền trước; fallback = từ phổ biến nhất. */
-    fun predictNext(previousWord: String): List<String> {
-        val prev = previousWord.lowercase().trim()
-        val nextWords = bigramModel[prev]
-        return if (!nextWords.isNullOrEmpty()) {
-            nextWords.entries.sortedByDescending { it.value }.map { it.key }.take(3)
-        } else {
-            index.top
+    /** Gợi ý từ tiếp theo: trigram(w-2, w-1) -> bigram(w-1) -> unigram, cộng
+     *  lớp cá nhân. Đầu câu (previousWord rỗng) = từ hay mở câu (G4). */
+    fun predictNext(previousWord: String, wordBeforePrev: String = ""): List<String> {
+        val p1 = previousWord.lowercase().trim()
+        val p2 = wordBeforePrev.lowercase().trim()
+        if (p1.isEmpty()) return bosTop.take(3).ifEmpty { index.top() }
+        val cands = HashSet<String>()
+        val id1 = midOf(p1)
+        val id2 = midOf(p2)
+        if (id2 >= 0 && id1 >= 0) {
+            // Mọi (p2,p1,next) có sẵn: quét đoạn tiền tố trong mảng trigram.
+            var i = lowerBound(triKeys,
+                (id2.toLong() shl 40) or (id1.toLong() shl 20))
+            while (i < triKeys.size && (triKeys[i] ushr 20) ==
+                ((id2.toLong() shl 20) or id1.toLong())) {
+                cands.add(idWord[(triKeys[i] and 0xFFFFFL).toInt()])
+                i++
+            }
         }
+        if (id1 >= 0) {
+            var i = lowerBound(biKeys, id1.toLong() shl 20)
+            while (i < biKeys.size && (biKeys[i] ushr 20) == id1.toLong()) {
+                cands.add(idWord[(biKeys[i] and 0xFFFFFL).toInt()])
+                i++
+            }
+        }
+        bigramModel[p1]?.keys?.let(cands::addAll)
+        userBigram[p1]?.keys?.let(cands::addAll)
+        if (cands.isEmpty()) return index.top()
+        return cands.asSequence()
+            .filter { vocabulary[it]?.let { e -> eligible(e) } != false }
+            .map { it to contextScore(p2, p1, it) }
+            .sortedByDescending { it.second }.take(3).map { it.first }.toList()
     }
 
     /** Gợi ý hoàn thành từ theo prefix đang gõ, so khớp cả dạng không dấu;
-     *  từ hay đi sau từ trước được ưu tiên lên trước. */
-    fun completions(prefix: String, previousWord: String? = null): List<String> {
+     *  xếp hạng = tần suất + cá nhân + điểm ngữ cảnh (3.4). */
+    fun completions(
+        prefix: String,
+        previousWord: String? = null,
+        beforePrev: String? = null
+    ): List<String> {
         val p = prefix.lowercase().trim()
         if (p.isEmpty()) return emptyList()
+        val p1 = previousWord?.lowercase()?.trim() ?: ""
+        val p2 = beforePrev?.lowercase()?.trim() ?: ""
         val base = deaccent(p)
-        val boost = bigramModel[previousWord?.lowercase()?.trim()] ?: emptyMap()
         val idx = index
-        val best = ArrayList<Pair<String, Int>>(4)
-        var i = lowerBound(idx.bases, base)
-        while (i < idx.sorted.size && idx.sorted[i].second.startsWith(base)) {
+        val best = ArrayList<Pair<String, Long>>(4)
+        var i = lowerBound(idx.sorted, base)
+        while (i < idx.sorted.size && idx.sorted[i].base.startsWith(base)) {
             val e = idx.sorted[i]
             i++
-            if (e.first == p) continue
-            val score = e.third + (boost[e.first] ?: 0) * 3
+            if (e.word == p || !eligible(e)) continue // từ mới học cần gõ ≥2 lần
+            val score = e.freq + e.personal * weights.personalBoost +
+                contextScore(p2, p1, e.word)
             if (best.size == 3 && score <= best[2].second) continue
-            best.add(e.first to score)
+            best.add(e.word to score)
             best.sortByDescending { it.second }
             if (best.size > 3) best.removeAt(3)
         }
         return best.map { it.first }
     }
 
+    /** prefix đã gõ còn là tiền tố của từ hợp lệ khác? (3.4 — chỉ hiện bản
+     *  sửa khi từ không thể là khúc đầu của từ đúng). */
+    fun isPrefixOfKnownWord(word: String): Boolean {
+        val w = word.lowercase().trim()
+        if (w.isEmpty()) return false
+        val base = deaccent(w)
+        val idx = index
+        var i = lowerBound(idx.sorted, base)
+        while (i < idx.sorted.size && idx.sorted[i].base.startsWith(base)) {
+            val e = idx.sorted[i++]
+            if (e.word != w && e.word.length > w.length && eligible(e)) return true
+        }
+        return false
+    }
+
     /**
      * Phương án sửa tốt nhất cho từ đã gõ, hoặc null nếu từ hợp lệ / không có
      * phương án đủ chắc. Nhận: lệch 1 ký tự, đảo 2 ký tự kề, hoặc đặt nhầm dấu
-     * ("noí" -> "nói"). Nhiều phương án cùng gần thì chỉ sửa khi phương án
-     * thắng có bigram với từ trước ủng hộ — không đoán bừa.
+     * ("noí" -> "nói"). 3.5: ưu tiên thay bằng phím kề QWERTY; ứng viên thắng
+     * phải thắng á quân bằng minMargin hoặc có ngữ cảnh ủng hộ — không chắc
+     * thì không sửa. Không sửa từ <3 ký tự hay từ chứa ký tự không phải chữ.
      */
-    fun correction(typedWord: String, previousWord: String?): String? {
+    fun correction(
+        typedWord: String,
+        previousWord: String?,
+        beforePrev: String? = null
+    ): String? {
         val word = typedWord.lowercase().trim()
-        if (word.isEmpty() || vocabulary.containsKey(word)) return null
-        val boost = bigramModel[previousWord?.lowercase()?.trim()] ?: emptyMap()
+        if (word.length < 3 || word.any { !it.isLetter() }) return null
+        if (vocabulary.containsKey(word)) return null
+        val p1 = previousWord?.lowercase()?.trim() ?: ""
+        val p2 = beforePrev?.lowercase()?.trim() ?: ""
         val base = deaccent(word)
         val idx = index
 
-        var best: String? = null
-        var bestScore = -1L
-        var bestSameBase = false
-        var nearCount = 0
-        val sameBaseCount = idx.byBase[base]?.size ?: 0
+        // Ứng viên: (word, điểm mô hình, điểm đã cộng bonus, sameBase, ctx, adj)
+        class Cand(val word: String, val model: Long, val boosted: Long,
+                   val sameBase: Boolean, val ctx: Boolean, val adj: Boolean)
+        val cands = mutableListOf<Cand>()
+        val sameBaseCount = idx.byBase[base]?.count { eligible(it) } ?: 0
+
+        fun offer(e: Entry, sameBase: Boolean) {
+            val ctx = (bigramModel[p1]?.containsKey(e.word) == true) ||
+                (userBigram[p1]?.containsKey(e.word) == true) ||
+                corpusBigram(midOf(p1), e.mid) > 0 ||
+                (p2.isNotEmpty() && corpusTrigram(midOf(p2), midOf(p1), e.mid) > 0)
+            val adj = word.length == e.word.length &&
+                qwertyAdjacentEdit(word, e.word)
+            val model = e.freq + e.personal * weights.personalBoost +
+                contextScore(p2, p1, e.word)
+            var boosted = model
+            if (sameBase) boosted += weights.sameBase
+            if (adj) boosted += weights.adjacency
+            cands.add(Cand(e.word, model, boosted, sameBase, ctx, adj))
+        }
+
         // Cùng thân từ (thiếu/lệch dấu): tra map, không quét.
-        for ((cand, freq) in idx.byBase[base].orEmpty()) {
-            nearCount++
-            val score = freq.toLong() + (boost[cand] ?: 0) * 10 + 1000
-            if (score > bestScore) {
-                bestScore = score
-                best = cand
-                bestSameBase = true
-            }
+        for (e in idx.byBase[base].orEmpty()) {
+            if (eligible(e)) offer(e, sameBase = true)
         }
         // Lệch/đảo 1 ký tự: chỉ quét 3 nhóm độ dài len-1..len+1.
         for (len in word.length - 1..word.length + 1) {
-            for ((cand, candBase, freq) in idx.byLen[len].orEmpty()) {
-                if (candBase == base || !editsWithinOne(word, cand)) continue
-                nearCount++
-                val score = freq.toLong() + (boost[cand] ?: 0) * 10
-                if (score > bestScore) {
-                    bestScore = score
-                    best = cand
-                    bestSameBase = false
+            for (e in idx.byLen[len].orEmpty()) {
+                if (e.base == base || !eligible(e) ||
+                    !editsWithinOne(word, e.word)) continue
+                offer(e, sameBase = false)
+            }
+        }
+        if (cands.isEmpty()) return null
+        cands.sortByDescending { it.boosted }
+        val winner = cands[0]
+        val runnerUp = cands.getOrNull(1)
+        if (cands.size == 1) return winner.word
+        if (sameBaseCount == 1 && winner.sameBase) return winner.word
+        if (winner.ctx) return winner.word // ngữ cảnh ủng hộ (giữ luật cũ)
+        // Chỉ sửa khi có bằng chứng typo (phím kề / cùng thân) VÀ điểm mô hình
+        // (không tính bonus) vẫn thắng á quân bằng ngưỡng — không chắc thì
+        // không sửa (3.5).
+        if ((winner.adj || winner.sameBase) && runnerUp != null &&
+            winner.model >= runnerUp.model * weights.minMargin) return winner.word
+        return null
+    }
+
+    /** Hàng phím kề nhau trên QWERTY (kể cả hàng số sát mép). */
+    private val qwertyNear = let {
+        val rows = listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
+        val m = mutableMapOf<Char, MutableSet<Char>>()
+        for (row in rows) for (i in row.indices) {
+            val s = m.getOrPut(row[i]) { mutableSetOf() }
+            if (i > 0) s.add(row[i - 1])
+            if (i < row.length - 1) s.add(row[i + 1])
+            // phím chéo hàng trên/dưới
+        }
+        // liên kết chéo giữa các hàng
+        for (r in 0 until rows.size - 1) for (i in rows[r].indices) {
+            for (k in listOf(i - 1, i, i + 1)) {
+                if (k in rows[r + 1].indices) {
+                    m.getOrPut(rows[r][i]) { mutableSetOf() }.add(rows[r + 1][k])
+                    m.getOrPut(rows[r + 1][k]) { mutableSetOf() }.add(rows[r][i])
                 }
             }
         }
-        if (nearCount == 1) return best
-        if (sameBaseCount == 1 && bestSameBase) return best
-        return if (best != null && (boost[best] ?: 0) > 0) best else null
+        m
+    }
+
+    /** a và b cùng độ dài, khác đúng 1 ký tự và hai ký tự đó là phím kề. */
+    private fun qwertyAdjacentEdit(a: String, b: String): Boolean {
+        var diff = -1
+        for (i in a.indices) if (a[i] != b[i]) {
+            if (diff >= 0) return false
+            diff = i
+        }
+        if (diff < 0) return false
+        return qwertyNear[deaccent(a[diff].toString())[0]]
+            ?.contains(deaccent(b[diff].toString())[0]) == true
     }
 
     /**
@@ -406,15 +754,25 @@ class ContextPredictor {
         return true
     }
 
-    /** Tự học: ghi nhận chuỗi từ người dùng gõ. */
-    fun recordSequence(prev: String, current: String) {
+    /** Tự học: từ mới vào vocab (freq=0, personal++) — gợi ý sau ≥2 lần gõ;
+     *  chuỗi từ ghi vào lớp cá nhân userBigram, không đụng corpus (3.2/3.6). */
+    fun recordSequence(prev: String, current: String, now: Long = System.currentTimeMillis()) {
         val p = prev.lowercase().trim()
         val c = current.lowercase().trim()
-        if (c.isEmpty()) return
-        vocabulary[c] = (vocabulary[c] ?: 0) + 1
-        indexCache = null
-        if (p.isEmpty()) return
-        val transitions = bigramModel.getOrPut(p) { mutableMapOf() }
+        // Chỉ học từ toàn chữ cái, độ dài hợp lý — không học chuỗi số/ký hiệu (2.3).
+        if (c.isEmpty() || c.length > 24 || c.any { !it.isLetter() }) return
+        val e = vocabulary[c]
+        if (e != null) {
+            e.personal++
+            e.lastSeen = now
+            indexCache?.topCache = null
+        } else {
+            vocabulary[c] = Entry(c, deaccent(c), 0, personal = 1, lastSeen = now)
+                .also { indexCache?.insert(it) }
+            vocabVersion++
+        }
+        if (p.isEmpty() || p.length > 24 || p.any { !it.isLetter() }) return
+        val transitions = userBigram.getOrPut(p) { mutableMapOf() }
         transitions[c] = (transitions[c] ?: 0) + 1
     }
 }

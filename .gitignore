@@ -34,3 +34,8 @@ Thumbs.db
 # Local agent/worktree state
 .superpowers/
 .worktrees/
+
+# Corpus Wikipedia tải về + tập eval giữ riêng (không commit văn bản CC BY-SA;
+# chỉ tools/build_model.py và số liệu thống kê vi_model.tsv được giữ)
+tools/corpus/
+tools/eval_corpus.txt

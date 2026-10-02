@@ -28,8 +28,8 @@ android {
         applicationId = "com.hkey.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.0.8"
+        versionCode = 10
+        versionName = "1.0.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -61,6 +61,9 @@ android {
                 "proguard-rules.pro"
             )
         }
+    }
+    buildFeatures {
+        buildConfig = true // chỉ phục vụ log đo thời gian ở bản debug
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Adaptive icon foreground: a polished key cap with subtle vertical gradient
-  and outline, bold indigo "H", and a white Telex circumflex accent floating
-  above — reads as "keyboard + Vietnamese" at a glance.
+  Foreground: geometric "Ấ" built from round-cap strokes — two A legs +
+  crossbar in white gradient, circumflex in lighter white, sắc tick in
+  orange. Reads as "Vietnamese" at launcher size.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
@@ -11,31 +11,53 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
+    <!-- soft shadow under the glyph -->
     <path
-        android:strokeColor="#B9C0CE"
-        android:strokeWidth="1.2"
-        android:pathData="M41,38 h26 q9,0 9,9 v20 q0,9 -9,9 h-26 q-9,0 -9,-9 v-20 q0,-9 9,-9 z">
-        <aapt:attr name="android:fillColor">
+        android:fillColor="#33000000"
+        android:pathData="M38,78a17,3.6 0 1,0 34,0a17,3.6 0 1,0 -34,0z" />
+
+    <!-- A legs + crossbar -->
+    <path
+        android:strokeWidth="7.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M54,36 L39,74 M54,36 L69,74 M45.6,60.5 L62.4,60.5">
+        <aapt:attr name="android:strokeColor">
             <gradient
                 android:type="linear"
                 android:startX="54"
-                android:startY="38"
+                android:startY="36"
                 android:endX="54"
-                android:endY="76">
+                android:endY="74">
                 <item android:color="#FFFFFF" android:offset="0" />
-                <item android:color="#DDE1EA" android:offset="1" />
+                <item android:color="#DCE1F9" android:offset="1" />
             </gradient>
         </aapt:attr>
     </path>
 
+    <!-- circumflex -->
     <path
-        android:fillColor="#3F51B5"
-        android:pathData="M43.5,46h5.5v7.5h10v-7.5h5.5v22h-5.5v-9h-10v9h-5.5z" />
-
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="3.5"
+        android:strokeWidth="6.2"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M48,33 L54,26.5 L60,33" />
+        android:strokeColor="#EEF1FE"
+        android:pathData="M45.5,30.5 L54,23.5 L62.5,30.5" />
+
+    <!-- sắc tick -->
+    <path
+        android:strokeWidth="5.6"
+        android:strokeLineCap="round"
+        android:pathData="M66.5,23 L73,15.5">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="66.5"
+                android:startY="23"
+                android:endX="73"
+                android:endY="15.5">
+                <item android:color="#FFCC80" android:offset="0" />
+                <item android:color="#FF8A3D" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>

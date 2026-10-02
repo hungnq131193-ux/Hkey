@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Themed (monochrome) layer: key cap silhouette with the "H" knocked out
-  via evenOdd fill, plus the accent wedge above.
+  Themed (monochrome) layer: same "Ấ" glyph as stroked silhouette.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -10,11 +9,22 @@
     android:viewportHeight="108">
 
     <path
-        android:fillColor="#FFFFFF"
-        android:fillType="evenOdd"
-        android:pathData="M41,38 h26 q9,0 9,9 v20 q0,9 -9,9 h-26 q-9,0 -9,-9 v-20 q0,-9 9,-9 z M43.5,46h5.5v22h-5.5z M59,46h5.5v22h-5.5z M43.5,53.5h21v5.5h-21z" />
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="7.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M54,36 L39,74 M54,36 L69,74 M45.6,60.5 L62.4,60.5" />
 
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M47,33.5 L54,26 L61,33.5 L57.5,33.5 L54,29.5 L50.5,33.5 Z" />
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="6.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M45.5,30.5 L54,23.5 L62.5,30.5" />
+
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5.6"
+        android:strokeLineCap="round"
+        android:pathData="M66.5,23 L73,15.5" />
 </vector>

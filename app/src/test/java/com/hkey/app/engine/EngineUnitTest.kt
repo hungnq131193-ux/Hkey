@@ -28,7 +28,6 @@ class EngineUnitTest {
         // Dấu thanh khi gõ cuối từ
         assertEquals("sáng", telex.transform("sangs"))
         assertEquals("của", telex.transform("cuar"))
-        assertEquals("hóa", telex.transform("hoas"))
         assertEquals("quý", telex.transform("quys"))
         assertEquals("tiền", telex.transform("tieenf"))
         assertEquals("mượn", telex.transform("muwownj"))
@@ -42,6 +41,48 @@ class EngineUnitTest {
     }
 
     @Test
+    fun testTonePlacementModern() {
+        val telex = TelexEngine()
+        // 2 nguyên âm + phụ âm cuối -> dấu ở nguyên âm 2
+        assertEquals("hoàn", telex.transform("hoanf"))
+        assertEquals("toán", telex.transform("toans"))
+        assertEquals("xuán", telex.transform("xuans"))
+        assertEquals("xuân", telex.transform("xuaan"))
+        assertEquals("xuấn", telex.transform("xuaans"))
+        // Cụm mở oa/oe/uy -> dấu ở nguyên âm 2 (kiểu mới)
+        assertEquals("hoá", telex.transform("hoas"))
+        assertEquals("khoẻ", telex.transform("khoer"))
+        assertEquals("khoè", telex.transform("khoef"))
+        assertEquals("thuỷ", telex.transform("thuyr"))
+        // Cụm mở khác -> dấu ở nguyên âm 1
+        assertEquals("cùa", telex.transform("cuaf"))
+        assertEquals("tái", telex.transform("tais"))
+        assertEquals("ngòi", telex.transform("ngoif"))
+        assertEquals("đào", telex.transform("ddaof"))
+        // 3 nguyên âm -> dấu giữa
+        assertEquals("xoài", telex.transform("xoaif"))
+        // gi- và qu- là phụ âm
+        assertEquals("già", telex.transform("giaf"))
+        assertEquals("quà", telex.transform("quaf"))
+        // Nguyên âm có dấu phụ mang dấu thanh
+        assertEquals("tiền", telex.transform("tieenf"))
+        assertEquals("nhuộm", telex.transform("nhuoomj"))
+        assertEquals("trắng", telex.transform("trawngs"))
+    }
+
+    @Test
+    fun testToneOverrideAndMidWord() {
+        val telex = TelexEngine()
+        // Gõ dấu mới đè dấu cũ
+        assertEquals("hoán", telex.transform("hoanfs"))
+        assertEquals("sàng", telex.transform("sangsf"))
+        // Dấu gõ giữa từ (trước phụ âm)
+        assertEquals("dáng", telex.transform("dasng"))
+        // Chữ thật giữa nguyên âm không bị ăn
+        assertEquals("taxi", telex.transform("taxi"))
+    }
+
+    @Test
     fun testPredictionAndCompletion() {
         val predictor = ContextPredictor()
         val suggestions = predictor.predictNext("hôm")
@@ -49,6 +90,9 @@ class EngineUnitTest {
 
         val comp = predictor.completions("hô")
         assertTrue(comp.contains("hôm"))
+        // Prefix không dấu cũng gợi ý được
+        assertTrue(predictor.completions("ho").contains("hôm"))
+        assertTrue(predictor.completions("dien").contains("điện"))
     }
 
     @Test
@@ -57,9 +101,11 @@ class EngineUnitTest {
         // Từ hợp lệ -> không sửa
         assertNull(predictor.correction("nay", "hôm"))
         assertNull(predictor.correction("đi", null))
-        // Sai 1 ký tự -> gợi ý sửa
+        // Sai 1 ký tự, duy nhất 1 phương án -> gợi ý sửa
         assertEquals("nay", predictor.correction("nayy", "hôm"))
         assertEquals("nay", predictor.correction("nayy", null))
+        // Nhiều phương án cùng lệch 1 ký tự -> không đoán bừa
+        assertNull(predictor.correction("con", null))
         // Sai xa hoặc từ lạ -> không đoán bừa
         assertNull(predictor.correction("xyzqq", null))
     }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
+import android.text.InputType
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -32,6 +33,7 @@ class HKeyIME : InputMethodService() {
     private var lettersPage: View? = null
     private var symbolsPage: View? = null
     private var shiftOn = false
+    private var autoCap = false
     private val letterKeys = mutableListOf<TextView>()
     private var shiftKey: TextView? = null
 
@@ -51,9 +53,51 @@ class HKeyIME : InputMethodService() {
             currentComposingWord.clear()
             lastCommittedWord = ""
         }
+        // Tự viết hoa chỉ bật ở ô text thường — không bật ở mật khẩu/email/url
+        val variation = info.inputType and InputType.TYPE_MASK_VARIATION
+        autoCap = info.inputType and InputType.TYPE_MASK_CLASS == InputType.TYPE_CLASS_TEXT &&
+            variation != InputType.TYPE_TEXT_VARIATION_PASSWORD &&
+            variation != InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD &&
+            variation != InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD &&
+            variation != InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS &&
+            variation != InputType.TYPE_TEXT_VARIATION_URI &&
+            variation != InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT
         shiftOn = false
         // Inflate lại để settings (cao/rộng/rung) áp dụng ngay lần mở tiếp theo
         setInputView(onCreateInputView())
+        updateAutoShift()
+    }
+
+    /** Con trỏ bị đổi chỗ (chạm chỗ khác/bôi chọn): chốt từ đang gõ, xoá buffer
+     *  để phím xoá và ký tự tiếp theo tác động đúng vị trí mới. */
+    override fun onUpdateSelection(
+        oldSelStart: Int, oldSelEnd: Int,
+        newSelStart: Int, newSelEnd: Int,
+        candidatesStart: Int, candidatesEnd: Int
+    ) {
+        super.onUpdateSelection(
+            oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd
+        )
+        if (currentComposingWord.isNotEmpty() &&
+            (newSelStart != newSelEnd || candidatesStart < 0 || newSelStart != candidatesEnd)
+        ) {
+            currentInputConnection?.finishComposingText()
+            currentComposingWord.clear()
+            updateSuggestions()
+        }
+        updateAutoShift()
+    }
+
+    /** Viết hoa đầu câu: ô trống, sau xuống dòng, sau dấu . ! ? (+ khoảng trắng). */
+    private fun updateAutoShift() {
+        if (!autoCap || currentComposingWord.isNotEmpty()) return
+        val before = currentInputConnection?.getTextBeforeCursor(16, 0) ?: return
+        val wantCap = before.isEmpty() || before.last() == '\n' ||
+            before.trimEnd().let { it.isNotEmpty() && it.last() in ".!?" }
+        if (wantCap && !shiftOn) {
+            shiftOn = true
+            updateShiftUI()
+        }
     }
 
     override fun onCreateInputView(): View {
@@ -223,12 +267,15 @@ class HKeyIME : InputMethodService() {
         commitComposing()
         currentInputConnection?.commitText(p, 1)
         updateSuggestions()
+        updateAutoShift()
     }
 
-    /** Chốt từ đang gõ nguyên trạng — không bao giờ tự thay bằng từ khác. */
+    /** Chốt từ đang gõ; nếu từ sai chính tả và có phương án sửa đủ gần
+     *  (lệch đúng 1 ký tự, nằm trong từ điển) thì tự thay bằng từ đúng. */
     private fun commitComposing() {
         if (currentComposingWord.isEmpty()) return
-        val word = telexEngine.transform(currentComposingWord.toString())
+        val typed = telexEngine.transform(currentComposingWord.toString())
+        val word = predictor.correction(typed, lastCommittedWord) ?: typed
         currentInputConnection?.commitText(word, 1)
         predictor.recordSequence(lastCommittedWord, word)
         lastCommittedWord = word
@@ -239,6 +286,7 @@ class HKeyIME : InputMethodService() {
         commitComposing()
         currentInputConnection?.commitText(" ", 1)
         updateSuggestions()
+        updateAutoShift()
     }
 
     private fun handleDelete() {
@@ -252,6 +300,7 @@ class HKeyIME : InputMethodService() {
             }
         } else {
             currentInputConnection?.deleteSurroundingText(1, 0)
+            updateAutoShift()
         }
         updateSuggestions()
     }
@@ -261,6 +310,7 @@ class HKeyIME : InputMethodService() {
         currentInputConnection?.sendKeyEvent(
             KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)
         )
+        updateAutoShift()
     }
 
     private fun acceptSuggestion(word: String) {
@@ -271,22 +321,24 @@ class HKeyIME : InputMethodService() {
         lastCommittedWord = word
         currentComposingWord.clear()
         updateSuggestions()
+        updateAutoShift()
     }
 
     private fun updateSuggestions() {
         if (currentComposingWord.isNotEmpty()) {
-            // Đang gõ: giữa = từ hiện tại, 2 bên = gợi ý hoàn thành
+            // Đang gõ: giữa = bản sửa (nếu sai chính tả) hoặc từ hiện tại,
+            // 2 bên = gợi ý hoàn thành
             val current = telexEngine.transform(currentComposingWord.toString())
             val completions = predictor.completions(current)
-            candidate1?.text = completions.getOrNull(1) ?: ""
-            candidate2?.text = completions.getOrNull(0) ?: current
-            candidate3?.text = completions.getOrNull(2) ?: ""
+            val fix = predictor.correction(current, lastCommittedWord)
+            candidate1?.text = completions.getOrNull(0) ?: ""
+            candidate2?.text = fix ?: current
+            candidate3?.text = completions.getOrNull(1) ?: ""
         } else {
             // Đã chốt từ: giữa = bản sửa (nếu từ có vẻ sai), 2 bên = từ tiếp theo
             val next = predictor.predictNext(lastCommittedWord)
-            val fix = predictor.correction(lastCommittedWord, null)
             candidate1?.text = next.getOrNull(1) ?: ""
-            candidate2?.text = fix ?: next.getOrNull(0) ?: ""
+            candidate2?.text = next.getOrNull(0) ?: ""
             candidate3?.text = next.getOrNull(2) ?: ""
         }
     }

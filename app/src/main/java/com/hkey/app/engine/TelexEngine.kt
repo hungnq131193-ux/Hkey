@@ -42,6 +42,63 @@ class TelexEngine {
     /** Cụm mở đặt dấu ở nguyên âm 2 theo kiểu mới: hoà, khoẻ, thuỷ. */
     private val secondVowelOpenClusters = setOf("oa", "oe", "uy")
 
+    /** Tách ký tự có dấu -> (nguyên âm gốc giữ dấu phụ, tone 0..5). */
+    private val decompose: Map<Char, Pair<Char, Int>> = buildMap {
+        for ((base, variants) in vowelBase) {
+            variants.forEachIndexed { i, s -> put(s[0], base to i) }
+        }
+        put('đ', 'đ' to 0)
+    }
+
+    private fun decomposed(c: Char) = decompose[c] ?: (c to 0)
+
+    /** Bỏ dấu thanh, giữ dấu phụ: "hoán" -> "hoan", "tiện" -> "tiên". */
+    fun stripTones(s: String): String {
+        val sb = StringBuilder(s.length)
+        for (c in s) sb.append(decomposed(c).first)
+        return sb.toString()
+    }
+
+    /**
+     * Bẻ dấu 'w' lên từ đã có dấu/chữ (bỏ dấu từ xa, hoặc 'w' gõ sau phụ âm
+     * cuối): "uo" không sau q -> "ươ"; nguyên âm cuối a/o/u -> ă/ơ/ư, giữ tone.
+     */
+    fun applyW(word: String): String? {
+        for (i in word.length - 2 downTo 0) {
+            if (decomposed(word[i]).first == 'u' && decomposed(word[i + 1]).first == 'o' &&
+                !(i > 0 && word[i - 1] == 'q')
+            ) {
+                val u = vowelBase.getValue('ư')[decomposed(word[i]).second]
+                val o = vowelBase.getValue('ơ')[decomposed(word[i + 1]).second]
+                return word.substring(0, i) + u + o + word.substring(i + 2)
+            }
+        }
+        for (i in word.length - 1 downTo 0) {
+            val target = when (decomposed(word[i]).first) {
+                'a' -> 'ă'; 'o' -> 'ơ'; 'u' -> 'ư'; else -> null
+            } ?: continue
+            return word.substring(0, i) +
+                vowelBase.getValue(target)[decomposed(word[i]).second] +
+                word.substring(i + 1)
+        }
+        return null
+    }
+
+    /** "uow" -> "ươ" phải chạy trước rule "ow"/"uw"; 'u' sau 'q' là phụ âm. */
+    private fun replaceUow(text: String): String {
+        var t = text
+        var i = t.indexOf("uow")
+        while (i >= 0) {
+            if (i > 0 && t[i - 1] == 'q') {
+                i = t.indexOf("uow", i + 1)
+            } else {
+                t = t.substring(0, i) + "ươ" + t.substring(i + 3)
+                i = t.indexOf("uow", i + 2)
+            }
+        }
+        return t
+    }
+
     fun transform(input: String): String {
         if (input.isEmpty()) return ""
         val isFirstUpper = input.first().isUpperCase()
@@ -73,7 +130,12 @@ class TelexEngine {
 
         text = text.replace("dd", "đ")
         text = text.replace("aa", "â").replace("ee", "ê").replace("oo", "ô")
+        text = replaceUow(text)
         text = text.replace("aw", "ă").replace("ow", "ơ").replace("uw", "ư")
+        // 'w' cuối sau phụ âm -> bẻ dấu nguyên âm trước nó ("honw" -> "hơn")
+        if (text.endsWith("w")) {
+            applyW(text.dropLast(1))?.let { text = it }
+        }
         text = text.replace("w", "ư")
 
         if (toneIdx > 0) {

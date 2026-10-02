@@ -1,7 +1,5 @@
 package com.hkey.app.engine
 
-import kotlin.math.min
-
 /**
  * Next-word prediction (bigram), prefix completion (so khớp cả dạng không
  * dấu để gợi ý ngay khi đang gõ), and conservative correction. Correction
@@ -235,6 +233,13 @@ class ContextPredictor {
         return sb.toString()
     }
 
+    /** (từ, dạng không dấu, tần suất) — dựng một lần, invalidate khi tự học. */
+    private var vocabIndexCache: List<Triple<String, String, Int>>? = null
+    private val vocabIndex: List<Triple<String, String, Int>>
+        get() = vocabIndexCache
+            ?: vocabulary.map { Triple(it.key, deaccent(it.key), it.value) }
+                .also { vocabIndexCache = it }
+
     /** Gợi ý từ tiếp theo theo từ liền trước; fallback = từ phổ biến nhất. */
     fun predictNext(previousWord: String): List<String> {
         val prev = previousWord.lowercase().trim()
@@ -242,41 +247,93 @@ class ContextPredictor {
         return if (!nextWords.isNullOrEmpty()) {
             nextWords.entries.sortedByDescending { it.value }.map { it.key }.take(3)
         } else {
-            vocabulary.entries.sortedByDescending { it.value }.map { it.key }.take(3)
+            vocabIndex.sortedByDescending { it.third }.map { it.first }.take(3)
         }
     }
 
-    /** Gợi ý hoàn thành từ theo prefix đang gõ, so khớp cả dạng không dấu. */
-    fun completions(prefix: String): List<String> {
+    /** Gợi ý hoàn thành từ theo prefix đang gõ, so khớp cả dạng không dấu;
+     *  từ hay đi sau từ trước được ưu tiên lên trước. */
+    fun completions(prefix: String, previousWord: String? = null): List<String> {
         val p = prefix.lowercase().trim()
         if (p.isEmpty()) return emptyList()
         val base = deaccent(p)
-        return vocabulary.entries
-            .filter { it.key != p && deaccent(it.key).startsWith(base) }
-            .sortedByDescending { it.value }
-            .map { it.key }
+        val boost = bigramModel[previousWord?.lowercase()?.trim()] ?: emptyMap()
+        return vocabIndex
+            .filter { it.first != p && it.second.startsWith(base) }
+            .sortedByDescending { it.third + (boost[it.first] ?: 0) * 3 }
+            .map { it.first }
             .take(3)
     }
 
     /**
-     * Trả về phương án sửa tốt nhất cho từ đã gõ, hoặc null nếu từ hợp lệ
-     * hoặc không có phương án đủ gần (chỉ sửa khi lệch đúng 1 ký tự).
+     * Phương án sửa tốt nhất cho từ đã gõ, hoặc null nếu từ hợp lệ / không có
+     * phương án đủ chắc. Nhận: lệch 1 ký tự, đảo 2 ký tự kề, hoặc đặt nhầm dấu
+     * ("noí" -> "nói"). Nhiều phương án cùng gần thì chỉ sửa khi phương án
+     * thắng có bigram với từ trước ủng hộ — không đoán bừa.
      */
     fun correction(typedWord: String, previousWord: String?): String? {
         val word = typedWord.lowercase().trim()
         if (word.isEmpty() || vocabulary.containsKey(word)) return null
+        val boost = bigramModel[previousWord?.lowercase()?.trim()] ?: emptyMap()
+        val base = deaccent(word)
 
-        previousWord?.lowercase()?.trim()?.let { prev ->
-            bigramModel[prev]?.entries
-                ?.minByOrNull { levenshteinDistance(word, it.key) }
-                ?.takeIf { levenshteinDistance(word, it.key) == 1 }
-                ?.let { return it.key }
+        var best: String? = null
+        var bestScore = -1L
+        var bestSameBase = false
+        var sameBaseCount = 0
+        var nearCount = 0
+        for ((cand, candBase, freq) in vocabIndex) {
+            val sameBase = candBase == base
+            if (!sameBase && !editsWithinOne(word, cand)) continue
+            nearCount++
+            if (sameBase) sameBaseCount++
+            val score = freq.toLong() + (boost[cand] ?: 0) * 10 + if (sameBase) 1000 else 0
+            if (score > bestScore) {
+                bestScore = score
+                best = cand
+                bestSameBase = sameBase
+            }
         }
+        if (nearCount == 1) return best
+        if (sameBaseCount == 1 && bestSameBase) return best
+        return if (best != null && (boost[best] ?: 0) > 0) best else null
+    }
 
-        // Fallback từ điển: chỉ sửa khi có DUY NHẤT một từ lệch đúng 1 ký tự —
-        // nhiều phương án cùng gần (vd "con" ~ còn/côn/cỏn) thì không đoán bừa.
-        val near = vocabulary.entries.filter { levenshteinDistance(word, it.key) == 1 }
-        return if (near.size == 1) near[0].key else null
+    /**
+     * Lệch tối đa 1 lần sửa: thay 1 ký tự, thêm/bớt 1 ký tự, hoặc đảo 2 ký tự
+     * kề nhau (Damerau). O(n), không cấp phát — thay Levenshtein đầy đủ.
+     */
+    private fun editsWithinOne(a: String, b: String): Boolean {
+        val n = a.length
+        val m = b.length
+        if (kotlin.math.abs(n - m) > 1) return false
+        if (n == m) {
+            var diffs = 0
+            var first = -1
+            for (i in 0 until n) {
+                if (a[i] != b[i]) {
+                    if (++diffs > 2) return false
+                    if (first < 0) first = i
+                }
+            }
+            if (diffs <= 1) return true
+            return a[first] == b[first + 1] && a[first + 1] == b[first] &&
+                a.regionMatches(first + 2, b, first + 2, n - first - 2)
+        }
+        val long = if (n > m) a else b
+        val short = if (n > m) b else a
+        var i = 0
+        var j = 0
+        var skipped = false
+        while (j < short.length) {
+            if (i < long.length && long[i] == short[j]) {
+                i++; j++
+            } else {
+                if (skipped) return false
+                skipped = true; i++
+            }
+        }
+        return true
     }
 
     /** Tự học: ghi nhận chuỗi từ người dùng gõ. */
@@ -285,24 +342,9 @@ class ContextPredictor {
         val c = current.lowercase().trim()
         if (c.isEmpty()) return
         vocabulary[c] = (vocabulary[c] ?: 0) + 1
+        vocabIndexCache = null
         if (p.isEmpty()) return
         val transitions = bigramModel.getOrPut(p) { mutableMapOf() }
         transitions[c] = (transitions[c] ?: 0) + 1
-    }
-
-    private fun levenshteinDistance(s1: String, s2: String): Int {
-        val dp = Array(s1.length + 1) { IntArray(s2.length + 1) }
-        for (i in 0..s1.length) dp[i][0] = i
-        for (j in 0..s2.length) dp[0][j] = j
-        for (i in 1..s1.length) {
-            for (j in 1..s2.length) {
-                val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
-                dp[i][j] = min(
-                    min(dp[i - 1][j] + 1, dp[i][j - 1] + 1),
-                    dp[i - 1][j - 1] + cost
-                )
-            }
-        }
-        return dp[s1.length][s2.length]
     }
 }

@@ -33,6 +33,7 @@ class HKeyIME : InputMethodService() {
     private var lettersPage: View? = null
     private var symbolsPage: View? = null
     private var shiftOn = false
+    private var shiftAuto = false
     private var autoCap = false
     private val letterKeys = mutableListOf<TextView>()
     private var shiftKey: TextView? = null
@@ -47,25 +48,34 @@ class HKeyIME : InputMethodService() {
 
     private val prefs get() = getSharedPreferences("hkey_settings", Context.MODE_PRIVATE)
 
+    override fun onStartInput(info: EditorInfo, restarting: Boolean) {
+        super.onStartInput(info, restarting)
+        computeAutoCap(info)
+    }
+
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         if (!restarting) {
             currentComposingWord.clear()
             lastCommittedWord = ""
         }
-        // Tự viết hoa chỉ bật ở ô text thường — không bật ở mật khẩu/email/url
+        computeAutoCap(info)
+        shiftOn = false
+        shiftAuto = false
+        // Inflate lại để settings (cao/rộng/rung) áp dụng ngay lần mở tiếp theo
+        setInputView(onCreateInputView())
+        updateAutoShift()
+    }
+
+    // Tự viết hoa chỉ bật ở ô text thường — không bật ở mật khẩu/email/url
+    private fun computeAutoCap(info: EditorInfo) {
         val variation = info.inputType and InputType.TYPE_MASK_VARIATION
         autoCap = info.inputType and InputType.TYPE_MASK_CLASS == InputType.TYPE_CLASS_TEXT &&
             variation != InputType.TYPE_TEXT_VARIATION_PASSWORD &&
             variation != InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD &&
             variation != InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD &&
             variation != InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS &&
-            variation != InputType.TYPE_TEXT_VARIATION_URI &&
-            variation != InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT
-        shiftOn = false
-        // Inflate lại để settings (cao/rộng/rung) áp dụng ngay lần mở tiếp theo
-        setInputView(onCreateInputView())
-        updateAutoShift()
+            variation != InputType.TYPE_TEXT_VARIATION_URI
     }
 
     /** Con trỏ bị đổi chỗ (chạm chỗ khác/bôi chọn): chốt từ đang gõ, xoá buffer
@@ -88,14 +98,19 @@ class HKeyIME : InputMethodService() {
         updateAutoShift()
     }
 
-    /** Viết hoa đầu câu: ô trống, sau xuống dòng, sau dấu . ! ? (+ khoảng trắng). */
+    /** Viết hoa đầu câu: ô trống, sau xuống dòng, sau dấu . ! ? (+ khoảng trắng).
+     *  App không trả text (before==null) thì mặc định viết hoa.
+     *  Bật/tắt hai chiều: shift tự động tắt khi ngữ cảnh hết cần hoa;
+     *  shift do người dùng bấm tay không bị ghi đè. */
     private fun updateAutoShift() {
         if (!autoCap || currentComposingWord.isNotEmpty()) return
-        val before = currentInputConnection?.getTextBeforeCursor(16, 0) ?: return
-        val wantCap = before.isEmpty() || before.last() == '\n' ||
+        val before = currentInputConnection?.getTextBeforeCursor(16, 0)
+        val wantCap = before == null || before.isEmpty() || before.last() == '\n' ||
             before.trimEnd().let { it.isNotEmpty() && it.last() in ".!?" }
-        if (wantCap && !shiftOn) {
-            shiftOn = true
+        val newShift = wantCap || (shiftOn && !shiftAuto)
+        if (newShift != shiftOn || wantCap != shiftAuto) {
+            shiftOn = newShift
+            shiftAuto = wantCap
             updateShiftUI()
         }
     }
@@ -237,6 +252,7 @@ class HKeyIME : InputMethodService() {
 
     private fun toggleShift() {
         shiftOn = !shiftOn
+        shiftAuto = false
         updateShiftUI()
     }
 
@@ -253,14 +269,71 @@ class HKeyIME : InputMethodService() {
 
     private fun handleCharacter(char: String) {
         val c = if (shiftOn) char.uppercase() else char
-        currentComposingWord.append(c)
         if (shiftOn) {
             shiftOn = false
+            shiftAuto = false
             updateShiftUI()
         }
+        // Con trỏ sát một từ đã gõ (không có space) -> nối phím vào từ đó,
+        // kiểu Unikey "bỏ dấu tự do": "hoan" + s -> "hoán", "hon" + w -> "hơn".
+        if (currentComposingWord.isEmpty() && c.first().isLowerCase() && resumeWord(c)) return
+        currentComposingWord.append(c)
         val transformed = telexEngine.transform(currentComposingWord.toString())
         currentInputConnection?.setComposingText(transformed, 1)
         updateSuggestions()
+    }
+
+    /** Chuỗi chữ cái liền trước con trỏ (rỗng nếu trước con trỏ là space/số). */
+    private fun adjacentWordBeforeCursor(): String {
+        val before = currentInputConnection?.getTextBeforeCursor(20, 0) ?: return ""
+        var i = before.length
+        while (i > 0 && before[i - 1].isLetter()) i--
+        return before.substring(i).toString()
+    }
+
+    /** Từ đứng trước từ đang gõ — bỏ qua vùng composing và khoảng trắng;
+     *  làm ngữ cảnh cho gợi ý/sửa lỗi thay vì chỉ nhớ từ trong session. */
+    private fun contextWordBeforeCursor(): String {
+        var before = currentInputConnection?.getTextBeforeCursor(40, 0)?.toString()
+            ?: return lastCommittedWord
+        if (currentComposingWord.isNotEmpty()) {
+            val comp = telexEngine.transform(currentComposingWord.toString())
+            if (before.endsWith(comp)) before = before.dropLast(comp.length)
+        }
+        var i = before.length
+        while (i > 0 && before[i - 1].isWhitespace()) i--
+        var j = i
+        while (j > 0 && before[j - 1].isLetter()) j--
+        return if (j < i) before.substring(j, i) else lastCommittedWord
+    }
+
+    /** 'w'/'z' áp thẳng lên từ đã commit; các phím khác kéo từ về vùng
+     *  composing (bỏ tone khỏi buffer) rồi gõ tiếp như thường. */
+    private fun resumeWord(c: String): Boolean {
+        val word = adjacentWordBeforeCursor()
+        if (word.isEmpty()) return false
+        when (c[0]) {
+            'w' -> telexEngine.applyW(word)?.let { return replaceAdjacentWord(word, it) }
+            'z' -> telexEngine.stripTones(word).let {
+                if (it != word) return replaceAdjacentWord(word, it)
+            }
+        }
+        currentComposingWord.append(telexEngine.stripTones(word)).append(c)
+        val transformed = telexEngine.transform(currentComposingWord.toString())
+        val ic = currentInputConnection ?: return false
+        ic.deleteSurroundingText(word.length, 0)
+        ic.setComposingText(transformed, 1)
+        updateSuggestions()
+        return true
+    }
+
+    private fun replaceAdjacentWord(old: String, new: String): Boolean {
+        val ic = currentInputConnection ?: return false
+        ic.deleteSurroundingText(old.length, 0)
+        ic.commitText(new, 1)
+        lastCommittedWord = new
+        updateSuggestions()
+        return true
     }
 
     private fun handlePunct(p: String) {
@@ -274,10 +347,11 @@ class HKeyIME : InputMethodService() {
      *  (lệch đúng 1 ký tự, nằm trong từ điển) thì tự thay bằng từ đúng. */
     private fun commitComposing() {
         if (currentComposingWord.isEmpty()) return
+        val prev = contextWordBeforeCursor()
         val typed = telexEngine.transform(currentComposingWord.toString())
-        val word = predictor.correction(typed, lastCommittedWord) ?: typed
+        val word = predictor.correction(typed, prev) ?: typed
         currentInputConnection?.commitText(word, 1)
-        predictor.recordSequence(lastCommittedWord, word)
+        predictor.recordSequence(prev, word)
         lastCommittedWord = word
         currentComposingWord.clear()
     }
@@ -315,9 +389,10 @@ class HKeyIME : InputMethodService() {
 
     private fun acceptSuggestion(word: String) {
         if (word.isEmpty()) return
+        val prev = contextWordBeforeCursor()
         // commitText tự thay thế vùng composing nếu đang gõ dở
         currentInputConnection?.commitText("$word ", 1)
-        predictor.recordSequence(lastCommittedWord, word)
+        predictor.recordSequence(prev, word)
         lastCommittedWord = word
         currentComposingWord.clear()
         updateSuggestions()
@@ -325,18 +400,19 @@ class HKeyIME : InputMethodService() {
     }
 
     private fun updateSuggestions() {
+        val ctx = contextWordBeforeCursor()
         if (currentComposingWord.isNotEmpty()) {
             // Đang gõ: giữa = bản sửa (nếu sai chính tả) hoặc từ hiện tại,
-            // 2 bên = gợi ý hoàn thành
+            // 2 bên = gợi ý hoàn thành (ưu tiên từ hay đi sau từ trước)
             val current = telexEngine.transform(currentComposingWord.toString())
-            val completions = predictor.completions(current)
-            val fix = predictor.correction(current, lastCommittedWord)
+            val completions = predictor.completions(current, ctx)
+            val fix = predictor.correction(current, ctx)
             candidate1?.text = completions.getOrNull(0) ?: ""
             candidate2?.text = fix ?: current
             candidate3?.text = completions.getOrNull(1) ?: ""
         } else {
-            // Đã chốt từ: giữa = bản sửa (nếu từ có vẻ sai), 2 bên = từ tiếp theo
-            val next = predictor.predictNext(lastCommittedWord)
+            // Đã chốt từ: gợi ý từ tiếp theo dựa vào từ ngay trước con trỏ
+            val next = predictor.predictNext(ctx)
             candidate1?.text = next.getOrNull(1) ?: ""
             candidate2?.text = next.getOrNull(0) ?: ""
             candidate3?.text = next.getOrNull(2) ?: ""

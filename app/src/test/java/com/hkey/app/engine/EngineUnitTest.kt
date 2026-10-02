@@ -83,6 +83,24 @@ class EngineUnitTest {
     }
 
     @Test
+    fun testRetroMarkAndTrailingW() {
+        val telex = TelexEngine()
+        // 'w' gõ sau phụ âm cuối vẫn bẻ dấu nguyên âm
+        assertEquals("hơn", telex.transform("honw"))
+        assertEquals("thươ", telex.transform("thuow"))
+        assertEquals("quơ", telex.transform("quow"))
+        // applyW trên từ đã commit (bỏ dấu từ xa), giữ tone cũ
+        assertEquals("hơn", telex.applyW("hon"))
+        assertEquals("cươi", telex.applyW("cuoi"))
+        assertEquals("hớn", telex.applyW("hón"))
+        assertNull(telex.applyW("xem")) // 'e' không nhận w -> null
+        // stripTones: phím 'z' xoá dấu từ đã gõ
+        assertEquals("hoan", telex.stripTones("hoán"))
+        assertEquals("tiên", telex.stripTones("tiến"))
+        assertEquals("đươc", telex.stripTones("được")) // tone gỡ, dấu phụ giữ
+    }
+
+    @Test
     fun testPredictionAndCompletion() {
         val predictor = ContextPredictor()
         val suggestions = predictor.predictNext("hôm")
@@ -108,5 +126,13 @@ class EngineUnitTest {
         assertNull(predictor.correction("con", null))
         // Sai xa hoặc từ lạ -> không đoán bừa
         assertNull(predictor.correction("xyzqq", null))
+        // Đảo 2 ký tự kề (lỗi gõ nhanh)
+        assertEquals("gian", predictor.correction("gain", null))
+        // Đặt nhầm vị trí dấu, chỉ có 1 phương án cùng thân từ
+        assertEquals("người", predictor.correction("ngưòi", null))
+        // Thiếu dấu, duy nhất một từ cùng thân trong từ điển
+        assertEquals("hôm", predictor.correction("hom", null))
+        // Nhiều phương án cùng gần ("tia" ~ kia/tin/bia/...) -> không đoán bừa
+        assertNull(predictor.correction("tia", null))
     }
 }

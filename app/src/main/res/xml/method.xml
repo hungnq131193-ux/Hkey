@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="com.hkey.app.MainActivity"
+    android:supportsInlineSuggestions="true">
+    <subtype
+        android:label="@string/subtype_vi"
+        android:imeSubtypeLocale="vi_VN"
+        android:imeSubtypeMode="keyboard" />
+</input-method>

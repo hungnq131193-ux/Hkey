@@ -10,7 +10,7 @@ class EngineUnitTest {
         assertEquals("hôm", telex.transform("hoom"))
         assertEquals("nay", telex.transform("nay"))
         assertEquals("đi", telex.transform("ddi"))
-        assertEquals("làm", telex.transform("laamf"))
+        assertEquals("làm", telex.transform("lamf"))
         assertEquals("phê", telex.transform("phee"))
     }
 

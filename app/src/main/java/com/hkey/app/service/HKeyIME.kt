@@ -20,9 +20,13 @@ import androidx.core.view.WindowInsetsCompat
 import com.hkey.app.BuildConfig
 import com.hkey.app.R
 import com.hkey.app.engine.ContextPredictor
+import com.hkey.app.engine.EngineOptions
 import com.hkey.app.engine.FieldMode
+import com.hkey.app.engine.ImeEngine
+import com.hkey.app.engine.ImeMethod
 import com.hkey.app.engine.LearningStore
 import com.hkey.app.engine.TelexEngine
+import com.hkey.app.engine.VniEngine
 import com.hkey.app.engine.TextContext
 import com.hkey.app.engine.ViModel
 import com.hkey.app.engine.ViSyllable
@@ -30,7 +34,7 @@ import java.io.File
 
 class HKeyIME : InputMethodService() {
 
-    private val telexEngine = TelexEngine()
+    private var engine: ImeEngine = TelexEngine()
     private val predictor = ContextPredictor()
 
     private val currentComposingWord = StringBuilder()
@@ -65,6 +69,9 @@ class HKeyIME : InputMethodService() {
     private var rawMode = false // ô nhạy cảm: gõ thẳng, không Telex/gợi ý/học (B1,B2)
     private var noSuggest = false // NO_SUGGESTIONS: Telex vẫn gõ, tắt gợi ý+sửa (1.4)
     private var noLearning = false // NO_PERSONALIZED_LEARNING/NO_SUGGESTIONS: không học (1.4)
+    private var vietMode = true // EN/VI qua phím lang (2.x); EN = gõ thẳng
+    private var langKey: TextView? = null
+    private var macros = emptyMap<String, String>() // gõ tắt "k=v" mỗi dòng (2.x)
     @Volatile private var destroyed = false
 
     private val repeatHandler = Handler(Looper.getMainLooper())
@@ -186,6 +193,14 @@ class HKeyIME : InputMethodService() {
         super.onStartInputView(info, restarting)
         currentInputType = info.inputType
         currentImeOptions = info.imeOptions
+        // 2.x: dựng lại engine theo prefs (kiểu gõ + kiểu dấu + spell-check)
+        val opts = EngineOptions(
+            method = ImeMethod.fromPref(prefs.getString("ime_method", null)),
+            newToneStyle = prefs.getBoolean("tone_new", true),
+            spellCheckTone = prefs.getBoolean("spell_check", true)
+        )
+        engine = if (opts.method == ImeMethod.VNI) VniEngine(opts) else TelexEngine(opts)
+        macros = parseMacros(prefs.getString("macros", "") ?: "")
         if (!restarting) {
             currentComposingWord.clear()
             lastCommittedWord = ""
@@ -387,6 +402,11 @@ class HKeyIME : InputMethodService() {
                 }
                 tag == "fn:sym" -> bindKey(tv) { showPage(symbolsPage) }
                 tag == "fn:abc" -> bindKey(tv) { showPage(lettersPage) }
+                tag == "fn:lang" -> { // 2.x: đổi nhanh EN/VI
+                    langKey = tv
+                    tv.text = if (vietMode) "VI" else "EN"
+                    bindKey(tv) { toggleLang() }
+                }
             }
         }
     }
@@ -431,6 +451,22 @@ class HKeyIME : InputMethodService() {
         updateShiftUI()
     }
 
+    /** Phím EN/VI: EN gõ thẳng không Telex/gợi ý; VI như thường (2.x). */
+    private fun toggleLang() {
+        commitComposing()
+        vietMode = !vietMode
+        langKey?.text = if (vietMode) "VI" else "EN"
+        updateSuggestions()
+    }
+
+    /** "k=v" mỗi dòng -> map gõ tắt; khóa khớp phím thô, không phân biệt hoa. */
+    private fun parseMacros(s: String): Map<String, String> =
+        s.lines().mapNotNull {
+            val i = it.indexOf('=')
+            if (i <= 0) null
+            else it.substring(0, i).trim().lowercase() to it.substring(i + 1).trim()
+        }.toMap()
+
     private fun updateShiftUI() {
         for (key in letterKeys) {
             val base = (key.tag as String).removePrefix("ch:")
@@ -446,7 +482,7 @@ class HKeyIME : InputMethodService() {
         val t0 = if (BuildConfig.DEBUG) System.nanoTime() else 0L
         lastAutoFix = null // gõ ký tự mới = chấp nhận bản sửa, hết hoàn tác
         val c = if (shiftOn) char.uppercase() else char
-        if (rawMode) {
+        if (rawMode || !vietMode) { // EN mode: gõ thẳng, không Telex/gợi ý (2.x)
             if (shiftOn) {
                 shiftOn = false
                 shiftAuto = false
@@ -464,7 +500,7 @@ class HKeyIME : InputMethodService() {
         // kiểu Unikey "bỏ dấu tự do": "hoan" + s -> "hoán", "hon" + w -> "hơn".
         if (currentComposingWord.isEmpty() && c.first().isLowerCase() && resumeWord(c)) return
         currentComposingWord.append(c)
-        val transformed = telexEngine.transform(currentComposingWord.toString())
+        val transformed = engine.transform(currentComposingWord.toString())
         currentInputConnection?.setComposingText(transformed, 1)
         updateSuggestions()
         if (BuildConfig.DEBUG) Log.d("HKeyIME", "handleCharacter ${(System.nanoTime() - t0) / 1_000} us")
@@ -492,7 +528,7 @@ class HKeyIME : InputMethodService() {
             return lastCommittedWord to ""
         }
         if (currentComposingWord.isNotEmpty()) {
-            val comp = telexEngine.transform(currentComposingWord.toString())
+            val comp = engine.transform(currentComposingWord.toString())
             if (before.endsWith(comp)) before = before.dropLast(comp.length)
         }
         tokenGlued = TextContext.gluedToken(before)
@@ -505,16 +541,16 @@ class HKeyIME : InputMethodService() {
         val word = adjacentWordBeforeCursor()
         if (word.isEmpty()) return false
         when (c[0]) {
-            'w' -> telexEngine.applyW(word)?.let { return replaceAdjacentWord(word, it) }
-            'z' -> telexEngine.stripTones(word).let {
+            'w' -> engine.applyW(word)?.let { return replaceAdjacentWord(word, it) }
+            'z' -> engine.stripTones(word).let {
                 if (it != word) return replaceAdjacentWord(word, it)
             }
         }
         // 1.8: giữ dấu sẵn có của từ cũ khi gõ tiếp; chỉ bóc tone khi phím
         // mới chính là phím dấu (gõ 's' sau "việt" -> "viết" vẫn đè tone được).
-        val base = if (c[0].lowercaseChar() in "sfrxj") telexEngine.stripTones(word) else word
+        val base = if (c[0].lowercaseChar() in "sfrxj") engine.stripTones(word) else word
         currentComposingWord.append(base).append(c)
-        val transformed = telexEngine.transform(currentComposingWord.toString())
+        val transformed = engine.transform(currentComposingWord.toString())
         contextCache = null // từ kề vừa vào buffer — ngữ cảnh phải dời lên trước nó
         val ic = currentInputConnection ?: return false
         ic.beginBatchEdit()
@@ -544,6 +580,11 @@ class HKeyIME : InputMethodService() {
     }
 
     private fun handlePunct(p: String) {
+        // VNI: chữ số trên trang symbols là phím dấu -> vào buffer (2.x)
+        if (vietMode && engine is VniEngine && p.length == 1 && p[0].isDigit()) {
+            handleCharacter(p)
+            return
+        }
         commitComposing()
         currentInputConnection?.commitText(p, 1)
         contextCache = null
@@ -558,19 +599,23 @@ class HKeyIME : InputMethodService() {
         if (currentComposingWord.isEmpty()) return
         val (prev, prev2) = contextPairBeforeCursor()
         val raw = currentComposingWord.toString()
-        val typed = telexEngine.transform(raw)
+        val typed = engine.transform(raw)
         // 3.5: không sửa từ viết hoa giữa câu (tên riêng); từ có số và từ
         // ngắn đã chặn trong correction().
         val isProperNoun = prev.isNotEmpty() && typed.any { it.isUpperCase() }
         // 1.3: kết quả không phải âm tiết VN (tiếng Anh/mã/URL) -> về phím thô
         val typedWord = if (ViSyllable.restorable(raw, typed)) raw else typed
+        // 2.x: macro gõ tắt khớp phím thô -> bung trực tiếp, không qua sửa
+        val expanded = macros[raw.lowercase()]
         // 1.1: mảng trong url/email/ip ("io" trong "hu.io.vn") không sửa, không học.
         // 1.4: ô NO_SUGGESTIONS không tự sửa.
-        val fixed = if (isProperNoun || tokenGlued || typedWord === raw || noSuggest) null
+        val fixed = if (expanded != null || isProperNoun || tokenGlued ||
+            typedWord === raw || noSuggest
+        ) null
             else predictor.correction(typed, prev, prev2)
             // 1.2: bản sửa trả chữ thường — áp lại kiểu hoa của từ đã gõ
             ?.let { TextContext.matchCase(typed, it) }
-        val word = fixed ?: typedWord
+        val word = expanded ?: fixed ?: typedWord
         currentInputConnection?.commitText(word, 1)
         if (!tokenGlued) learn(prev, word)
         lastCommittedWord = word
@@ -594,10 +639,10 @@ class HKeyIME : InputMethodService() {
         }
         if (currentComposingWord.isNotEmpty()) {
             // 1.7: xóa 1 ký tự HIỂN THỊ ("việt"⌫="việ"), không phải phím thô cuối
-            val r = telexEngine.dropLastDisplayChar(currentComposingWord.toString())
+            val r = engine.dropLastDisplayChar(currentComposingWord.toString())
             currentComposingWord.clear()
             currentComposingWord.append(r)
-            val transformed = telexEngine.transform(r)
+            val transformed = engine.transform(r)
             if (transformed.isEmpty()) {
                 currentInputConnection?.commitText("", 1)
             } else {
@@ -636,7 +681,7 @@ class HKeyIME : InputMethodService() {
         try {
             ic.deleteSurroundingText(tail, 0)
             currentComposingWord.append(fix.raw)
-            ic.setComposingText(telexEngine.transform(fix.raw), 1)
+            ic.setComposingText(engine.transform(fix.raw), 1)
         } finally {
             ic.endBatchEdit()
         }
@@ -705,7 +750,7 @@ class HKeyIME : InputMethodService() {
         val cased = when {
             currentComposingWord.isNotEmpty() ->
                 TextContext.matchCase(
-                    telexEngine.transform(currentComposingWord.toString()), word
+                    engine.transform(currentComposingWord.toString()), word
                 )
             shiftOn -> word.replaceFirstChar { it.uppercase() }
             else -> word
@@ -726,7 +771,7 @@ class HKeyIME : InputMethodService() {
     }
 
     private fun updateSuggestions() {
-        if (rawMode || noSuggest) {
+        if (rawMode || noSuggest || !vietMode) {
             candidate1?.text = ""
             candidate2?.text = ""
             candidate3?.text = ""
@@ -736,7 +781,7 @@ class HKeyIME : InputMethodService() {
         if (currentComposingWord.isNotEmpty()) {
             // Đang gõ: giữa = bản sửa (nếu sai chính tả) hoặc từ hiện tại,
             // 2 bên = gợi ý hoàn thành (ưu tiên từ hay đi sau từ trước)
-            val current = telexEngine.transform(currentComposingWord.toString())
+            val current = engine.transform(currentComposingWord.toString())
             // 1.1: mảng trong url/email/ip -> không gợi ý, không sửa
             val completions = if (tokenGlued) emptyList()
                 else predictor.completions(current, ctx, ctx2)

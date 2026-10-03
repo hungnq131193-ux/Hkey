@@ -66,6 +66,53 @@
             android:text="Âm thanh phím" />
 
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Kiểu gõ"
+            android:textStyle="bold" />
+
+        <Spinner
+            android:id="@+id/sp_method"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/sw_tone_new"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Bỏ dấu kiểu mới (hoà, thuỷ)" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/sw_spell_check"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Kiểm tra chính tả trước khi áp dấu" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Gõ tắt (mỗi dòng: ký-tự=nội-dung, vd: hn=Hà Nội)"
+            android:textSize="12sp" />
+
+        <EditText
+            android:id="@+id/ed_macros"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:background="#2A2D31"
+            android:hint="hn=Hà Nội"
+            android:importantForAutofill="no"
+            android:inputType="textMultiLine"
+            android:minLines="3"
+            android:padding="8dp"
+            android:textColorHint="#80868B" />
+
+        <TextView
             android:id="@+id/tv_height_label"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

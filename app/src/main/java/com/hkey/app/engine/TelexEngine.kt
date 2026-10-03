@@ -12,7 +12,12 @@ package com.hkey.app.engine
  * khác -> nguyên âm 1 ("của", "tái"); cụm 3 nguyên âm -> giữa ("xoài").
  * Kiểu hoa giữ theo từng ký tự: "USA" -> "USA", "iPhone" -> "iPhone" (1.2).
  */
-class TelexEngine {
+class TelexEngine(
+    private val opts: EngineOptions = EngineOptions()
+) : ImeEngine {
+
+    private val vowelBase = ViGlyphs.vowelBase
+    private val decomposed = ViGlyphs::decomposed
 
     private val toneMap = mapOf(
         's' to 1, // Sắc
@@ -22,45 +27,13 @@ class TelexEngine {
         'j' to 5  // Nặng
     )
 
-    private val vowelBase = mapOf(
-        'a' to listOf("a", "á", "à", "ả", "ã", "ạ"),
-        'ă' to listOf("ă", "ắ", "ằ", "ẳ", "ẵ", "ặ"),
-        'â' to listOf("â", "ấ", "ầ", "ẩ", "ẫ", "ậ"),
-        'e' to listOf("e", "é", "è", "ẻ", "ẽ", "ẹ"),
-        'ê' to listOf("ê", "ế", "ề", "ể", "ễ", "ệ"),
-        'i' to listOf("i", "í", "ì", "ỉ", "ĩ", "ị"),
-        'o' to listOf("o", "ó", "ò", "ỏ", "õ", "ọ"),
-        'ô' to listOf("ô", "ố", "ồ", "ổ", "ỗ", "ộ"),
-        'ơ' to listOf("ơ", "ớ", "ờ", "ở", "ỡ", "ợ"),
-        'u' to listOf("u", "ú", "ù", "ủ", "ũ", "ụ"),
-        'ư' to listOf("ư", "ứ", "ừ", "ử", "ữ", "ự"),
-        'y' to listOf("y", "ý", "ỳ", "ỷ", "ỹ", "ỵ")
-    )
-
-    private val markedVowels = setOf('ă', 'â', 'ê', 'ô', 'ơ', 'ư')
-    private val plainVowels = setOf('a', 'e', 'i', 'o', 'u', 'y')
-
-    /** Cụm mở đặt dấu ở nguyên âm 2 theo kiểu mới: hoà, khoẻ, thuỷ. */
-    private val secondVowelOpenClusters = setOf("oa", "oe", "uy")
-
     /** Sentinel cho luật "gõ lặp hủy" (1.3): BREAK chặn gộp cặp literal,
      *  W_LITERAL đứng thay 'w' thật để khỏi bị rule ư/aw/ow/uw ăn. */
     private val MARK_BREAK = ''
     private val W_LITERAL = ''
 
-    /** Tách ký tự có dấu -> (nguyên âm gốc giữ dấu phụ, tone 0..5). */
-    private val decompose: Map<Char, Pair<Char, Int>> = buildMap {
-        for ((base, variants) in vowelBase) {
-            variants.forEachIndexed { i, s -> put(s[0], base to i) }
-        }
-        put('đ', 'đ' to 0)
-    }
-
-    private fun decomposed(c: Char): Pair<Char, Int> =
-        decompose[c] ?: c.lowercaseChar().let { decompose[it] ?: (c to 0) }
-
     /** Bỏ dấu thanh, giữ dấu phụ và kiểu hoa: "HoÁn" -> "HoAn". */
-    fun stripTones(s: String): String {
+    override fun stripTones(s: String): String {
         val sb = StringBuilder(s.length)
         for (c in s) {
             val base = decomposed(c).first
@@ -74,7 +47,7 @@ class TelexEngine {
      * cuối): "uo" không sau q -> "ươ"; nguyên âm cuối a/o/u -> ă/ơ/ư, giữ tone
      * và kiểu hoa của ký tự bị đổi (1.2).
      */
-    fun applyW(word: String): String? {
+    override fun applyW(word: String): String? {
         for (i in word.length - 2 downTo 0) {
             if (decomposed(word[i]).first == 'u' && decomposed(word[i + 1]).first == 'o' &&
                 !(i > 0 && word[i - 1].lowercaseChar() == 'q')
@@ -147,8 +120,38 @@ class TelexEngine {
         return t to u
     }
 
-    fun transform(input: String): String {
+    /** Thay `from` thành `to` CÙNG ĐỘ DÀI (Quick Telex "tt"->"th") — mask hoa
+     *  giữ nguyên vị trí, không cần co giãn (2.x). */
+    private fun replaceMaskedSameLen(
+        text: String, up: BooleanArray, from: String, to: String
+    ): Pair<String, BooleanArray> {
+        var t = text
+        var i = t.indexOf(from)
+        while (i >= 0) {
+            t = t.substring(0, i) + to + t.substring(i + from.length)
+            i = t.indexOf(from, i + to.length)
+        }
+        return t to up
+    }
+
+    override fun transform(input: String): String {
         if (input.isEmpty()) return ""
+        val out = transformInternal(input, false)
+        // 2.x spell-check: phím dấu là ký tự cuối và kết quả không phải âm
+        // tiết VN ("sachf"->"sàch" sai coda) -> in phím dấu thô ("sachf").
+        // Chỉ xét phím CUỐI để không phá ký tự dấu giữa buffer ("dasng").
+        if (opts.spellCheckTone && input.length >= 2 &&
+            isToneCommand(input.lowercase(), input.length - 1) &&
+            !ViSyllable.isValid(out.lowercase())
+        ) {
+            return transformInternal(input, true)
+        }
+        return out
+    }
+
+    /** toneLiteral=true: phím dấu CUỐI được giữ làm chữ thường (đường spell-
+     *  check của transform()); các phím dấu trước vẫn tiêu thụ bình thường. */
+    private fun transformInternal(input: String, toneLiteral: Boolean): String {
         var text = input.lowercase()
         var up = BooleanArray(input.length) { input[it].isUpperCase() }
 
@@ -161,15 +164,19 @@ class TelexEngine {
         }
 
         // Phím dấu cuối cùng sau nguyên âm là dấu đang dùng; các phím dấu trước
-        // đó (đã tiêu thụ) bị gỡ — nên gõ dấu mới đè lên dấu cũ.
+        // đó (đã tiêu thụ) bị gỡ — nên gõ dấu mới đè lên dấu cũ. toneLiteral:
+        // phím dấu cuối giữ làm chữ (đường spell-check 2.x).
         var toneIdx = 0
-        if ((1 until text.length).any { isToneCommand(text, it) }) {
-            toneIdx = toneMap.getValue(text[(text.length - 1 downTo 1).first { isToneCommand(text, it) }])
+        val cmds = (1 until text.length).filter { isToneCommand(text, it) }
+        if (cmds.isNotEmpty()) {
+            val litIdx = if (toneLiteral) cmds.last() else -1
+            val eff = if (toneLiteral) cmds.dropLast(1) else cmds
+            if (eff.isNotEmpty()) toneIdx = toneMap.getValue(text[eff.last()])
             val sb = StringBuilder(text.length)
             val nup = BooleanArray(text.length)
             var n = 0
             for (i in text.indices) {
-                if (!isToneCommand(text, i)) {
+                if (!isToneCommand(text, i) || i == litIdx) {
                     sb.append(text[i])
                     nup[n++] = up[i]
                 }
@@ -216,7 +223,10 @@ class TelexEngine {
                 val run = j - i
                 if (c == 'w' && run >= 2) {
                     repeat(run - 1) { k -> sb.append(W_LITERAL); nup[n] = up[i + k]; n++ }
-                } else if (c in "aeod" && run >= 3) {
+                } else if (c in "aeod" && run >= 3 &&
+                    // Simple Telex không có cặp aa/ee/oo -> không cần hủy lặp (2.x)
+                    (opts.method != ImeMethod.TELEX_SIMPLE || c == 'd')
+                ) {
                     var left = run
                     var k = i
                     while (left >= 3) {
@@ -235,10 +245,18 @@ class TelexEngine {
             up = nup.copyOf(n)
         }
 
+        // Quick Telex: cặp phụ âm đôi (2.x). Cùng độ dài nên mask không đổi.
+        if (opts.method == ImeMethod.TELEX_QUICK) {
+            for ((a, b) in QUICK_PAIRS) {
+                replaceMaskedSameLen(text, up, a, b).let { text = it.first }
+            }
+        }
         replaceMasked(text, up, "dd", "đ").let { text = it.first; up = it.second }
-        replaceMasked(text, up, "aa", "â").let { text = it.first; up = it.second }
-        replaceMasked(text, up, "ee", "ê").let { text = it.first; up = it.second }
-        replaceMasked(text, up, "oo", "ô").let { text = it.first; up = it.second }
+        if (opts.method != ImeMethod.TELEX_SIMPLE) { // Simple: không aa/ee/oo (2.x)
+            replaceMasked(text, up, "aa", "â").let { text = it.first; up = it.second }
+            replaceMasked(text, up, "ee", "ê").let { text = it.first; up = it.second }
+            replaceMasked(text, up, "oo", "ô").let { text = it.first; up = it.second }
+        }
         replaceUow(text, up).let { text = it.first; up = it.second }
         replaceMasked(text, up, "aw", "ă").let { text = it.first; up = it.second }
         replaceMasked(text, up, "ow", "ơ").let { text = it.first; up = it.second }
@@ -253,7 +271,7 @@ class TelexEngine {
         replaceMasked(text, up, "w", "ư").let { text = it.first; up = it.second }
 
         if (toneIdx > 0) {
-            val i = toneTargetIndex(text)
+            val i = ViTone.toneTargetIndex(text, opts.newToneStyle)
             if (i >= 0) {
                 vowelBase[text[i]]?.get(toneIdx)?.let { accented ->
                     text = text.substring(0, i) + accented + text.substring(i + 1)
@@ -285,41 +303,6 @@ class TelexEngine {
         return sb.toString()
     }
 
-    /** Ký tự gốc bỏ mọi dấu: 'ấ'->'a', 'đ'->'d' (so khớp khi xóa — 1.7). */
-    private fun bareChar(c: Char): Char = when (val b = decomposed(c).first) {
-        'ă', 'â' -> 'a'; 'ê' -> 'e'; 'ô', 'ơ' -> 'o'; 'ư' -> 'u'; 'đ' -> 'd'
-        else -> b
-    }
-
-    /** ⌫ xóa 1 ký tự HIỂN THỊ cuối (1.7): thử bỏ từng phím thô (thường nằm
-     *  giữa — "vieetj"->việt bỏ 't' -> "vieej"->việ, giữ tone); không khớp
-     *  thì cắt dần đuôi thô, chấp nhận kết quả không dài hơn phần còn lại,
-     *  đúng tiền tố hoặc chỉ khác ở dấu và không nhiều dấu hơn ("ass"->as:
-     *  ⌫ bỏ 's' -> "as"->á không chấp nhận, cắt tiếp -> "a"). */
-    fun dropLastDisplayChar(raw: String): String {
-        if (raw.isEmpty()) return raw
-        val target = transform(raw).dropLast(1)
-        for (i in raw.length - 1 downTo 0) {
-            val cand = raw.removeRange(i, i + 1)
-            if (transform(cand) == target) return cand
-        }
-        var r = raw
-        while (r.isNotEmpty()) {
-            r = r.dropLast(1)
-            val t = transform(r)
-            val acceptable = target.startsWith(t) ||
-                (t.length == target.length &&
-                    t.indices.all { bareChar(t[it]) == bareChar(target[it]) } &&
-                    t.count { it.code > 127 } <= target.count { it.code > 127 })
-            if (t.length <= target.length && acceptable) return r
-        }
-        return ""
-    }
-
-    private fun isVowelChar(c: Char) = c in plainVowels || c in markedVowels || c == 'w'
-
-    private fun vowelBefore(text: String, i: Int) = (0 until i).any { isVowelChar(text[it]) }
-
     /**
      * Phím dấu "đang hoạt động": đứng sau nguyên âm, không nằm trong cặp đúp,
      * và là ký tự cuối hoặc đứng trước phụ âm ("dasng" -> "dáng" mà "taxi"
@@ -329,45 +312,15 @@ class TelexEngine {
         val c = text[i]
         if (i == 0 || !toneMap.containsKey(c)) return false
         if (text[i - 1] == c || (i + 1 < text.length && text[i + 1] == c)) return false
-        if (!vowelBefore(text, i)) return false
-        return i + 1 == text.length || !isVowelChar(text[i + 1])
+        if (!ViTone.vowelBefore(text, i)) return false
+        return i + 1 == text.length || !ViTone.isVowelChar(text[i + 1])
     }
 
-    /** 'u' sau 'q' và 'i' sau 'g' trước nguyên âm là phụ âm (qu-, gi-), không phải nguyên âm. */
-    private fun isVowel(text: String, i: Int): Boolean {
-        val c = text[i]
-        if (c !in plainVowels && c !in markedVowels) return false
-        if (c == 'u' && i > 0 && text[i - 1] == 'q') return false
-        if (c == 'i' && i > 0 && text[i - 1] == 'g' &&
-            i + 1 < text.length && (text[i + 1] in plainVowels || text[i + 1] in markedVowels)
-        ) return false
-        return true
-    }
-
-    private fun toneTargetIndex(text: String): Int {
-        // Nguyên âm đã có dấu phụ (lấy cái cuối: "ươ" -> ơ, "uô" -> ô)
-        var lastMarked = -1
-        for (i in text.indices) if (text[i] in markedVowels) lastMarked = i
-        if (lastMarked >= 0) return lastMarked
-
-        // Cụm nguyên âm đầu tiên (đã loại qu-, gi-)
-        var s = -1
-        var e = -1
-        for (i in text.indices) {
-            if (isVowel(text, i)) {
-                if (s == -1) s = i
-                e = i
-            } else if (s != -1) break
-        }
-        if (s == -1) return -1
-
-        val len = e - s + 1
-        if (len == 1) return s
-        if (len >= 3) return s + 1 // cụm 3 âm: dấu ở giữa (xoài)
-
-        // Cụm 2 nguyên âm: có phụ âm cuối -> âm 2 ("hoàn"); mở oa/oe/uy -> âm 2
-        // kiểu mới ("hoà", "khoẻ", "thuỷ"); còn lại -> âm 1 ("của", "tái")
-        val hasFinalConsonant = e + 1 < text.length
-        return if (hasFinalConsonant || text.substring(s, e + 1) in secondVowelOpenClusters) e else s
+    companion object {
+        /** Quick Telex (2.x): cặp phụ âm đôi -> âm đầu ghép. */
+        private val QUICK_PAIRS = listOf(
+            "cc" to "ch", "gg" to "gi", "kk" to "kh", "nn" to "ng",
+            "qq" to "qu", "pp" to "ph", "tt" to "th"
+        )
     }
 }

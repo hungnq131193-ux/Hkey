@@ -76,8 +76,15 @@
         <TextView style="@style/KbKey" android:tag="p:," android:text="," />
 
         <TextView
+            style="@style/KbKey.Func"
+            android:layout_weight="1.3"
+            android:tag="fn:lang"
+            android:text="VI"
+            android:textSize="13sp" />
+
+        <TextView
             style="@style/KbKey"
-            android:layout_weight="4"
+            android:layout_weight="3"
             android:tag="fn:space"
             android:text="HKey"
             android:textColor="@color/kb_text_dim"

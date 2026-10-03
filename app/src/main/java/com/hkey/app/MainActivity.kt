@@ -4,12 +4,18 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
 import android.view.inputmethod.InputMethodManager
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.EditText
 import android.widget.SeekBar
+import android.widget.Spinner
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
+import androidx.core.widget.doAfterTextChanged
 
 class MainActivity : AppCompatActivity() {
 
@@ -32,6 +38,34 @@ class MainActivity : AppCompatActivity() {
         swSound.isChecked = prefs.getBoolean("key_sound", true)
         swVibrate.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("vibrate", on).apply() }
         swSound.setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("key_sound", on).apply() }
+
+        // Kiểu gõ / kiểu dấu / spell-check / gõ tắt (2.x)
+        val methods = listOf("Telex", "Telex đơn giản", "Telex nhanh", "VNI")
+        val methodPrefs = listOf("telex", "simple", "quick", "vni")
+        findViewById<Spinner>(R.id.sp_method)?.apply {
+            adapter = ArrayAdapter(
+                this@MainActivity, android.R.layout.simple_spinner_item, methods
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            setSelection(methodPrefs.indexOf(prefs.getString("ime_method", "telex")).coerceAtLeast(0))
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                    prefs.edit().putString("ime_method", methodPrefs[pos]).apply()
+                }
+                override fun onNothingSelected(p: AdapterView<*>?) {}
+            }
+        }
+        findViewById<SwitchCompat>(R.id.sw_tone_new)?.apply {
+            isChecked = prefs.getBoolean("tone_new", true)
+            setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("tone_new", on).apply() }
+        }
+        findViewById<SwitchCompat>(R.id.sw_spell_check)?.apply {
+            isChecked = prefs.getBoolean("spell_check", true)
+            setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("spell_check", on).apply() }
+        }
+        findViewById<EditText>(R.id.ed_macros)?.apply {
+            setText(prefs.getString("macros", ""))
+            doAfterTextChanged { prefs.edit().putString("macros", it?.toString() ?: "").apply() }
+        }
 
         val tvHeight = findViewById<TextView>(R.id.tv_height_label)
         val sbHeight = findViewById<SeekBar>(R.id.sb_height)

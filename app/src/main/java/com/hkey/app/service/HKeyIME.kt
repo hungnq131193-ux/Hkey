@@ -33,6 +33,7 @@ import java.io.File
 class HKeyIME : InputMethodService() {
 
     private var engine: ImeEngine = TelexEngine()
+    private var engineSig: List<Any?>? = null // prefs quyết định engine (6f)
     private val predictor = ContextPredictor()
 
     private val currentComposingWord = StringBuilder()
@@ -62,7 +63,8 @@ class HKeyIME : InputMethodService() {
     private var optSound = true
     private var optVibrate = true
     private var contextCache: Pair<String, String>? = null // (từ trước, từ trước nữa)
-    private var currentInputType = 0 // inputType của ô đang focus (cho getCursorCapsMode)
+    private val tailTracker = TailTracker(40) // bản sao cục bộ text đã commit — cắt IPC (6b)
+    private var currentInputType = 0 // inputType của ô đang focus (cờ CAP_* cho capsWanted)
     private var currentImeOptions = 0 // imeOptions ô đang focus (action Enter — 1.5)
     private var tokenGlued = false // từ đang gõ dính sau . @ / : — url/email/ip (1.1)
     private var rawMode = false // ô nhạy cảm: gõ thẳng, không Telex/gợi ý/học (B1,B2)
@@ -211,19 +213,26 @@ class HKeyIME : InputMethodService() {
         currentInputType = info.inputType
         currentImeOptions = info.imeOptions
         // 2.x: dựng lại engine theo prefs (kiểu gõ + kiểu dấu + spell-check)
+        // 6f: chỉ dựng lại khi chữ ký prefs đổi — không phải mỗi lần focus.
         val opts = EngineOptions(
             method = ImeMethod.fromPref(prefs.getString("ime_method", null)),
             newToneStyle = prefs.getBoolean("tone_new", true),
             spellCheckTone = prefs.getBoolean("spell_check", true)
         )
-        engine = if (opts.method == ImeMethod.VNI) VniEngine(opts) else TelexEngine(opts)
-        macros = parseMacros(prefs.getString("macros", "") ?: "")
+        val macroStr = prefs.getString("macros", "") ?: ""
+        val sig = listOf(opts.method, opts.newToneStyle, opts.spellCheckTone, macroStr)
+        if (sig != engineSig) {
+            engineSig = sig
+            engine = if (opts.method == ImeMethod.VNI) VniEngine(opts) else TelexEngine(opts)
+            macros = parseMacros(macroStr)
+        }
         if (!restarting) {
             currentComposingWord.clear()
             lastCommittedWord = ""
             lastAutoFix = null
             contextCache = null
             tokenGlued = false
+            tailTracker.invalidate()
         }
         computeAutoCap(info)
         shiftOn = false
@@ -295,25 +304,36 @@ class HKeyIME : InputMethodService() {
         if (currentComposingWord.isNotEmpty() && !selfEdit) {
             currentInputConnection?.finishComposingText()
             currentComposingWord.clear()
-            updateSuggestions()
+            requestSuggestions()
         }
-        if (!selfEdit) contextCache = null // con trỏ/ngữ cảnh đổi thật mới vô hiệu
+        if (!selfEdit) { // con trỏ/ngữ cảnh đổi thật mới vô hiệu cả tail-cache
+            contextCache = null
+            tailTracker.invalidate()
+        }
         updateAutoShift()
     }
 
-    /** Viết hoa đầu câu. Nguồn chính: getCursorCapsMode — Android tự tôn trọng
-     *  cờ app đặt (CAP_SENTENCES/WORDS/CHARACTERS) và luật dấu cách (1.1).
-     *  Ô không đặt CAP_SENTENCES (text trơn): tự soi — dấu . ! ? … phải có
-     *  khoảng trắng theo sau mới là kết câu ("hu.io.vn" không bật hoa).
-     *  Bật/tắt hai chiều: shift tự động tắt khi ngữ cảnh hết cần hoa;
-     *  shift do người dùng bấm tay không bị ghi đè. */
+    /** Viết hoa theo cờ CAP_* của ô — tính từ tail-cache cục bộ, không còn
+     *  gọi getCursorCapsMode/getTextBeforeCursor (IPC) mỗi phím (6b). */
+    private fun capsWanted(t: CharSequence?): Boolean {
+        val flags = currentInputType and InputType.TYPE_MASK_FLAGS
+        return when {
+            flags and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS != 0 -> true
+            flags and InputType.TYPE_TEXT_FLAG_CAP_WORDS != 0 ->
+                t.isNullOrEmpty() || t.last().isWhitespace()
+            // CAP_SENTENCES hoặc ô không đặt cờ: tự soi ranh giới câu
+            else -> TextContext.sentenceBoundary(t)
+        }
+    }
+
+    /** Viết hoa đầu câu theo cờ CAP_* của ô (1.1). Ô không đặt CAP_SENTENCES
+     *  (text trơn): tự soi — dấu . ! ? … phải có khoảng trắng theo sau mới là
+     *  kết câu ("hu.io.vn" không bật hoa). Bật/tắt hai chiều: shift tự động
+     *  tắt khi ngữ cảnh hết cần hoa; shift do người dùng bấm tay không bị
+     *  ghi đè. */
     private fun updateAutoShift() {
         if (!autoCap || currentComposingWord.isNotEmpty() || shiftLocked) return
-        val ic = currentInputConnection ?: return
-        val caps = try { ic.getCursorCapsMode(currentInputType) } catch (e: Exception) { 0 }
-        val wantCap = caps != 0 ||
-            (currentInputType and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES == 0 &&
-                TextContext.sentenceBoundary(ic.getTextBeforeCursor(32, 0)))
+        val wantCap = capsWanted(tailNow())
         val newShift = wantCap || (shiftOn && !shiftAuto)
         if (newShift != shiftOn || wantCap != shiftAuto) {
             shiftOn = newShift
@@ -409,6 +429,7 @@ class HKeyIME : InputMethodService() {
             if (dir > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
         )
         contextCache = null
+        tailTracker.invalidate() // con trỏ dời khỏi vùng đã biết
         updateAutoShift()
     }
 
@@ -421,8 +442,9 @@ class HKeyIME : InputMethodService() {
             if (!t.isNullOrEmpty()) {
                 commitComposing()
                 currentInputConnection?.commitText(t, 1)
+                tailTracker.append(t)
                 contextCache = null
-                updateSuggestions()
+                requestSuggestions()
                 updateAutoShift()
             }
         }
@@ -437,8 +459,9 @@ class HKeyIME : InputMethodService() {
         }
         commitComposing()
         currentInputConnection?.commitText(s, 1)
+        tailTracker.append(s)
         contextCache = null
-        updateSuggestions()
+        requestSuggestions()
         updateAutoShift()
     }
 
@@ -464,7 +487,7 @@ class HKeyIME : InputMethodService() {
         commitComposing()
         vietMode = !vietMode
         kbView?.langVi = vietMode
-        updateSuggestions()
+        requestSuggestions()
     }
 
     /** "k=v" mỗi dòng -> map gõ tắt; khóa khớp phím thô, không phân biệt hoa. */
@@ -487,6 +510,7 @@ class HKeyIME : InputMethodService() {
         if (rawMode || !vietMode) { // EN mode: gõ thẳng, không Telex/gợi ý (2.x)
             consumeShift()
             currentInputConnection?.commitText(c, 1)
+            tailTracker.append(c)
             return
         }
         consumeShift() // caps lock (shiftLocked) thì không tự tắt
@@ -496,7 +520,7 @@ class HKeyIME : InputMethodService() {
         currentComposingWord.append(c)
         val transformed = engine.transform(currentComposingWord.toString())
         currentInputConnection?.setComposingText(transformed, 1)
-        updateSuggestions()
+        requestSuggestions()
         if (BuildConfig.DEBUG) Log.d("HKeyIME", "handleCharacter ${(System.nanoTime() - t0) / 1_000} us")
     }
 
@@ -509,12 +533,19 @@ class HKeyIME : InputMethodService() {
         }
     }
 
+    /** ~40 ký tự cuối ĐÃ COMMIT trước con trỏ (không gồm vùng composing).
+     *  Cache cục bộ — chỉ gọi getTextBeforeCursor khi chưa biết (con trỏ đổi
+     *  từ ngoài / ô mới) thay vì mỗi phím (6b). */
+    private fun tailNow(): String? =
+        tailTracker.tail ?: currentInputConnection
+            ?.getTextBeforeCursor(40, 0)?.toString()?.also { tailTracker.seed(it) }
+
     /** Chuỗi chữ cái liền trước con trỏ (rỗng nếu trước con trỏ là space/số). */
     private fun adjacentWordBeforeCursor(): String {
-        val before = currentInputConnection?.getTextBeforeCursor(20, 0) ?: return ""
+        val before = tailNow()?.takeLast(20) ?: return ""
         var i = before.length
         while (i > 0 && before[i - 1].isLetter()) i--
-        return before.substring(i).toString()
+        return before.substring(i)
     }
 
     /** Ngữ cảnh không đổi trong lúc gõ một từ — cache để không gọi
@@ -525,14 +556,20 @@ class HKeyIME : InputMethodService() {
         contextCache ?: computeContextPair().also { contextCache = it }
 
     private fun computeContextPair(): Pair<String, String> {
-        var before = currentInputConnection?.getTextBeforeCursor(40, 0)?.toString()
+        val fresh = tailTracker.tail == null
+        var before = tailNow()
         if (before == null) {
             tokenGlued = false
             return lastCommittedWord to ""
         }
-        if (currentComposingWord.isNotEmpty()) {
+        // Fetch mới lúc đang composing có thể dính vùng composing — cắt ra để
+        // tail chỉ giữ phần đã commit (tail theo dõi sẵn đã sạch).
+        if (fresh && currentComposingWord.isNotEmpty()) {
             val comp = engine.transform(currentComposingWord.toString())
-            if (before.endsWith(comp)) before = before.dropLast(comp.length)
+            if (before.endsWith(comp)) {
+                before = before.dropLast(comp.length)
+                tailTracker.seed(before)
+            }
         }
         tokenGlued = TextContext.gluedToken(before)
         return TextContext.lastTwo(before, lastCommittedWord)
@@ -559,11 +596,12 @@ class HKeyIME : InputMethodService() {
         ic.beginBatchEdit()
         try {
             ic.deleteSurroundingText(word.length, 0)
+            tailTracker.drop(word.length)
             ic.setComposingText(transformed, 1)
         } finally {
             ic.endBatchEdit()
         }
-        updateSuggestions()
+        requestSuggestions()
         return true
     }
 
@@ -572,13 +610,15 @@ class HKeyIME : InputMethodService() {
         ic.beginBatchEdit()
         try {
             ic.deleteSurroundingText(old.length, 0)
+            tailTracker.drop(old.length)
             ic.commitText(new, 1)
+            tailTracker.append(new)
         } finally {
             ic.endBatchEdit()
         }
         lastCommittedWord = new
         contextCache = null
-        updateSuggestions()
+        requestSuggestions()
         return true
     }
 
@@ -590,8 +630,9 @@ class HKeyIME : InputMethodService() {
         }
         commitComposing()
         currentInputConnection?.commitText(p, 1)
+        tailTracker.append(p)
         contextCache = null
-        updateSuggestions()
+        requestSuggestions()
         updateAutoShift()
     }
 
@@ -620,6 +661,7 @@ class HKeyIME : InputMethodService() {
             ?.let { TextContext.matchCase(typed, it) }
         val word = expanded ?: fixed ?: typedWord
         currentInputConnection?.commitText(word, 1)
+        tailTracker.append(word)
         if (!tokenGlued) learn(prev, word)
         lastCommittedWord = word
         lastAutoFix = if (fixed != null) AutoFix(word, typed, raw) else null
@@ -633,34 +675,38 @@ class HKeyIME : InputMethodService() {
         val now = android.os.SystemClock.uptimeMillis()
         // 3.x: 2 lần space nhanh sau một từ -> ". " + bật viết hoa đầu câu
         if (optDoubleSpace && now - lastSpaceTap < 600 && ic != null) {
-            val before = ic.getTextBeforeCursor(2, 0)
+            val before = tailNow()?.takeLast(2) // cache cục bộ, không IPC (6b)
             if (before != null && before.length == 2 &&
                 before[0].isLetter() && before[1] == ' '
             ) {
                 ic.beginBatchEdit()
                 try {
                     ic.deleteSurroundingText(1, 0)
+                    tailTracker.drop(1)
                     ic.commitText(". ", 1)
+                    tailTracker.append(". ")
                 } finally {
                     ic.endBatchEdit()
                 }
                 lastSpaceTap = 0L
                 contextCache = null
-                updateSuggestions()
+                requestSuggestions()
                 updateAutoShift()
                 return
             }
         }
         lastSpaceTap = now
         ic?.commitText(" ", 1)
+        tailTracker.append(" ")
         contextCache = null
-        updateSuggestions()
+        requestSuggestions()
         updateAutoShift()
     }
 
     private fun handleDelete() {
         if (rawMode) {
             currentInputConnection?.deleteSurroundingText(1, 0)
+            tailTracker.drop(1)
             return
         }
         if (currentComposingWord.isNotEmpty()) {
@@ -676,17 +722,17 @@ class HKeyIME : InputMethodService() {
             }
         } else if (!revertAutoFix()) {
             currentInputConnection?.deleteSurroundingText(1, 0)
+            tailTracker.drop(1)
             contextCache = null
             updateAutoShift()
         }
-        updateSuggestions()
+        requestSuggestions()
     }
 
     /** Số ký tự trước con trỏ thuộc về từ vừa bị sửa (kể cả space theo sau);
      *  0 = không đứng ngay sau từ đó -> không hoàn tác được. */
     private fun autoFixTail(fix: AutoFix): Int {
-        val before = currentInputConnection
-            ?.getTextBeforeCursor(fix.committed.length + 1, 0) ?: return 0
+        val before = tailNow()?.takeLast(fix.committed.length + 1) ?: return 0
         return when {
             before.endsWith(fix.committed + " ") -> fix.committed.length + 1
             before.endsWith(fix.committed) -> fix.committed.length
@@ -706,6 +752,7 @@ class HKeyIME : InputMethodService() {
         ic.beginBatchEdit()
         try {
             ic.deleteSurroundingText(tail, 0)
+            tailTracker.drop(tail)
             currentComposingWord.append(fix.raw)
             ic.setComposingText(engine.transform(fix.raw), 1)
         } finally {
@@ -724,17 +771,20 @@ class HKeyIME : InputMethodService() {
         val tail = autoFixTail(fix)
         if (tail == 0) return
         val ic = currentInputConnection ?: return
+        val reverted = if (tail > fix.committed.length) fix.typed + " " else fix.typed
         ic.beginBatchEdit()
         try {
             ic.deleteSurroundingText(tail, 0)
-            ic.commitText(if (tail > fix.committed.length) fix.typed + " " else fix.typed, 1)
+            tailTracker.drop(tail)
+            ic.commitText(reverted, 1)
+            tailTracker.append(reverted)
         } finally {
             ic.endBatchEdit()
         }
         contextCache = null
         learn(contextWordBeforeCursor(), fix.typed)
         lastCommittedWord = fix.typed
-        updateSuggestions()
+        requestSuggestions()
     }
 
     private fun handleEnter() {
@@ -749,12 +799,14 @@ class HKeyIME : InputMethodService() {
             ic.performEditorAction(action)
         ) {
             contextCache = null
+            tailTracker.invalidate() // app tự xử lý action — text đổi ngoài tầm
             updateAutoShift()
             return
         }
         ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
         ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
         contextCache = null
+        tailTracker.invalidate() // \n hoặc app thay đổi — đọc lại lần sau
         updateAutoShift()
     }
 
@@ -783,13 +835,32 @@ class HKeyIME : InputMethodService() {
         }
         // commitText tự thay thế vùng composing nếu đang gõ dở
         currentInputConnection?.commitText("$cased ", 1)
+        tailTracker.append("$cased ")
         learn(prev, word)
         lastCommittedWord = cased
         currentComposingWord.clear()
         consumeShift()
         contextCache = null
-        updateSuggestions()
+        requestSuggestions()
         updateAutoShift()
+    }
+
+    private var suggPending = false
+
+    /** 6e: gom updateSuggestions về một lần mỗi frame khi gõ nhanh — nhiều
+     *  phím trong cùng frame chỉ tính gợi ý 1 lần. */
+    private fun requestSuggestions() {
+        val v = kbView
+        if (v == null) {
+            updateSuggestions()
+            return
+        }
+        if (suggPending) return
+        suggPending = true
+        v.postOnAnimation {
+            suggPending = false
+            updateSuggestions()
+        }
     }
 
     private fun updateSuggestions() {

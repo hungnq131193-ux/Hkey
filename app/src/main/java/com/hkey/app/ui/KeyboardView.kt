@@ -371,6 +371,16 @@ class KeyboardView(context: Context) : View(context) {
         }
     }
 
+    /** 6d: vẽ lại chỉ vùng một phím thay vì invalidate() toàn view. */
+    private fun invalidateArea(a: Area) {
+        invalidate(
+            android.graphics.Rect(
+                a.draw.left.toInt(), a.draw.top.toInt(),
+                a.draw.right.toInt() + 1, a.draw.bottom.toInt() + 1
+            )
+        )
+    }
+
     /** Bong bóng/dải phụ tràn khỏi bounds view -> invalidate cả chuỗi cha để
      *  vùng thanh gợi ý được vẽ lại (clipChildren=false ở layout). */
     private fun invalidateOverlay() {
@@ -449,15 +459,13 @@ class KeyboardView(context: Context) : View(context) {
         return true
     }
 
-    private fun touchExploration(): Boolean =
-        (context.getSystemService(Context.ACCESSIBILITY_SERVICE)
-            as? android.view.accessibility.AccessibilityManager)
-            ?.isTouchExplorationEnabled == true
+    // 6c: cache trạng thái TalkBack — không gọi getSystemService mỗi MotionEvent.
+    private var touchExplorationEnabled = false
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         // TalkBack bật: touch đi qua hover-explore + double-tap click,
         // không bắn phím trực tiếp (tránh gõ kép).
-        if (touchExploration()) return super.onTouchEvent(e)
+        if (touchExplorationEnabled) return super.onTouchEvent(e)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val i = e.actionIndex
@@ -470,10 +478,10 @@ class KeyboardView(context: Context) : View(context) {
                     feed(k)
                     handler.postDelayed(repeater, touch.repeatFirstMs)
                 }
-                areaOf(k)?.let { showPreview(it) }
+                // 6d: chỉ vẽ lại phím vừa đổi trạng thái (overlay tự lo vùng tràn).
+                areaOf(k)?.let { a -> showPreview(a); invalidateArea(a) }
                 lpPid = pid
                 handler.postDelayed(longPress, lpMs)
-                invalidate()
             }
             MotionEvent.ACTION_MOVE -> {
                 for (i in 0 until e.pointerCount) {
@@ -501,11 +509,12 @@ class KeyboardView(context: Context) : View(context) {
                     }
                     val nk = keyAt(x, y)
                     if (nk != null && nk !== p.key) {
+                        val oldKey = p.key
                         // Trượt khỏi ⌫ -> repeater dừng (sửa lặp vô hạn).
                         if (touch.moveTo(pid, nk)) handler.removeCallbacks(repeater)
                         if (lpPid == pid) handler.removeCallbacks(longPress)
-                        areaOf(nk)?.let { showPreview(it) }
-                        invalidate()
+                        areaOf(nk)?.let { a -> showPreview(a); invalidateArea(a) }
+                        areaOf(oldKey)?.let { invalidateArea(it) }
                     }
                 }
             }
@@ -525,7 +534,7 @@ class KeyboardView(context: Context) : View(context) {
                 } else {
                     touch.ptrs.values.firstOrNull()?.let { areaOf(it.key)?.let { a -> showPreview(a) } }
                 }
-                invalidate()
+                up.key?.let { areaOf(it)?.let { a -> invalidateArea(a) } }
             }
             MotionEvent.ACTION_CANCEL -> {
                 clearTouch()
@@ -601,6 +610,14 @@ class KeyboardView(context: Context) : View(context) {
     init {
         // Delegate này tự cấp AccessibilityNodeProvider cho framework.
         androidx.core.view.ViewCompat.setAccessibilityDelegate(this, touchHelper)
+        // 6c: đọc TalkBack một lần + theo listener thay vì hỏi mỗi MotionEvent.
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE)
+            as? android.view.accessibility.AccessibilityManager
+        touchExplorationEnabled = am?.isTouchExplorationEnabled == true
+        am?.addTouchExplorationStateChangeListener { on ->
+            touchExplorationEnabled = on
+            invalidate()
+        }
     }
 
     override fun dispatchHoverEvent(e: MotionEvent): Boolean =

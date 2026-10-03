@@ -17,6 +17,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.widget.doAfterTextChanged
 import com.hkey.app.ui.KbThemes
+import com.hkey.app.ui.ThemePreviewView
+import com.hkey.app.ui.ThemeSpinnerAdapter
 
 class MainActivity : AppCompatActivity() {
 
@@ -71,37 +73,43 @@ class MainActivity : AppCompatActivity() {
             isChecked = prefs.getBoolean("double_space", true)
             setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("double_space", on).apply() }
         }
-        // 1.3.2: chọn giao diện (12 theme) + kiểu bo góc phím. Máy chưa có
-        // pref nào -> mặc định "system" (sáng/tối theo máy); máy cũ chỉ có
-        // cờ dark_theme -> giữ nguyên lựa chọn sáng/tối đó.
+        // 1.3.2: chọn giao diện (12 theme) + kiểu bo góc phím có ảnh mô tả / xem trước trực quan.
         val themeIds = KbThemes.ALL.map { it.id }
-        val curTheme = prefs.getString("kb_theme", null)
+        var selectedTheme = prefs.getString("kb_theme", null)
             ?: if (prefs.contains("dark_theme"))
                 KbThemes.prefId(null, prefs.getBoolean("dark_theme", true))
             else KbThemes.SYSTEM
+        val shapeIds = listOf("medium", "square", "round")
+        var selectedShape = prefs.getString("key_shape", "medium") ?: "medium"
+
+        val themePreview = findViewById<ThemePreviewView>(R.id.theme_preview)
+        themePreview?.setTheme(selectedTheme, selectedShape)
+
         findViewById<Spinner>(R.id.sp_theme)?.apply {
-            adapter = ArrayAdapter(
-                this@MainActivity, android.R.layout.simple_spinner_item,
-                KbThemes.ALL.map { it.name }
-            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-            setSelection(themeIds.indexOf(curTheme).coerceAtLeast(0))
+            adapter = ThemeSpinnerAdapter(this@MainActivity, KbThemes.ALL)
+            setSelection(themeIds.indexOf(selectedTheme).coerceAtLeast(0))
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    prefs.edit().putString("kb_theme", themeIds[pos]).apply()
+                    val tId = themeIds[pos]
+                    selectedTheme = tId
+                    prefs.edit().putString("kb_theme", tId).apply()
+                    themePreview?.setTheme(selectedTheme, selectedShape)
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
         }
-        val shapeIds = listOf("medium", "square", "round")
         findViewById<Spinner>(R.id.sp_shape)?.apply {
             adapter = ArrayAdapter(
                 this@MainActivity, android.R.layout.simple_spinner_item,
                 listOf("Góc vừa", "Góc vuông", "Góc tròn")
             ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-            setSelection(shapeIds.indexOf(prefs.getString("key_shape", "medium")).coerceAtLeast(0))
+            setSelection(shapeIds.indexOf(selectedShape).coerceAtLeast(0))
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    prefs.edit().putString("key_shape", shapeIds[pos]).apply()
+                    val sId = shapeIds[pos]
+                    selectedShape = sId
+                    prefs.edit().putString("key_shape", sId).apply()
+                    themePreview?.setTheme(selectedTheme, selectedShape)
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }

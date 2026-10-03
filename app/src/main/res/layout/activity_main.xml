@@ -135,6 +135,19 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="Mô tả giao diện"
+            android:textStyle="bold" />
+
+        <com.hkey.app.ui.ThemePreviewView
+            android:id="@+id/theme_preview"
+            android:layout_width="match_parent"
+            android:layout_height="180dp"
+            android:layout_marginTop="6dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:text="Gõ tắt (mỗi dòng: ký-tự=nội-dung, vd: hn=Hà Nội)"
             android:textSize="12sp" />

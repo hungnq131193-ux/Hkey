@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.1 (versionCode 16)
+
+**Sửa lỗi chốt từ khác với chữ đang hiển thị**
+- Gõ "tesst" (Telex gõ lặp = chữ s thường) hiển thị "test" nhưng chốt ra
+  "tesst": cơ chế giữ nguyên phím thô giờ chỉ chạy khi transform chèn ký tự
+  tiếng Việt ("google"->"gôgle" vẫn về "google"), còn kết quả ASCII sạch
+  thì chốt đúng như màn hình hiển thị.
+
+**Sửa bàn phím bị ẩn khi chạm trượt xuống mép dưới phím cách**
+- Thêm đệm chạm ~10dp trong vùng phím ngay trên thanh điều hướng: chạm hơi
+  trượt xuống mép vẫn nằm trong vùng phím (bấm ra phím gần nhất) thay vì
+  rơi vào vùng gesture/nav của hệ thống làm ẩn bàn phím.
+
 ## 1.3.0 (versionCode 15)
 
 **Gợi ý học theo mức sử dụng — càng gõ càng chuẩn**

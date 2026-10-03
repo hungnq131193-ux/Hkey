@@ -48,11 +48,15 @@ internal object ViTone {
     /** Cụm mở đặt dấu ở nguyên âm 2 theo kiểu mới: hoà, khoẻ, thuỷ. */
     private val secondVowelOpenClusters = setOf("oa", "oe", "uy")
 
+    /** Nguyên âm thật — 'w' KHÔNG tính: 'w' là phím mark, đứng sau phím
+     *  dấu không chặn phím dấu đó ("osw" -> "ớ", "asw" -> "ắ"). */
     fun isVowelChar(c: Char) =
-        c in ViGlyphs.plainVowels || c in ViGlyphs.markedVowels || c == 'w'
+        c in ViGlyphs.plainVowels || c in ViGlyphs.markedVowels
 
+    /** 'w' ở trước vẫn tính là đã có nguyên âm (nó sẽ thành ư/ă/ơ) để
+     *  phím dấu đứng sau tiêu thụ được: "ws" -> "ứ". */
     fun vowelBefore(text: String, i: Int) =
-        (0 until i).any { isVowelChar(text[it]) }
+        (0 until i).any { isVowelChar(text[it]) || text[it] == 'w' }
 
     /** 'u' sau 'q' và 'i' sau 'g' trước nguyên âm là phụ âm (qu-, gi-). */
     fun isVowel(text: String, i: Int): Boolean {

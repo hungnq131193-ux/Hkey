@@ -36,16 +36,25 @@ interface ImeEngine {
             val cand = raw.removeRange(i, i + 1)
             if (transform(cand) == target) return cand
         }
+        // Fallback: cắt dần đuôi thô, chọn candidate tốt nhất — khớp đúng
+        // target > cùng độ dài chỉ lệch dấu > là tiền tố của target (ít nhất).
+        var best = ""
+        var bestScore = 0
         var r = raw
         while (r.isNotEmpty()) {
             r = r.dropLast(1)
             val t = transform(r)
-            val acceptable = target.startsWith(t) ||
-                (t.length == target.length &&
+            if (t.length > target.length) continue
+            val score = when {
+                t == target -> return r
+                t.length == target.length &&
                     t.indices.all { ViGlyphs.bareChar(t[it]) == ViGlyphs.bareChar(target[it]) } &&
-                    t.count { it.code > 127 } <= target.count { it.code > 127 })
-            if (t.length <= target.length && acceptable) return r
+                    t.count { it.code > 127 } <= target.count { it.code > 127 } -> 2
+                target.startsWith(t) -> 1
+                else -> 0
+            }
+            if (score > bestScore) { bestScore = score; best = r }
         }
-        return ""
+        return best
     }
 }

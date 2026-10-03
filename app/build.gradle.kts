@@ -78,6 +78,11 @@ android {
             .configureEach { dependsOn("requireReleaseSigning") }
     }
 
+    // 4.x: vi_model.bin lưu KHÔNG nén trong APK -> openRawResourceFd + mmap
+    androidResources {
+        noCompress.add("bin")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -24,12 +24,13 @@ class EvalTest {
             ?.let { p.addWords(it.readLines()) }
         if (withModel) {
             resFile(
-                "src/main/res/raw/vi_model.gz",
-                "app/src/main/res/raw/vi_model.gz"
+                "src/main/res/raw/vi_model.bin",
+                "app/src/main/res/raw/vi_model.bin"
             )?.let { m ->
-                val model = java.util.zip.GZIPInputStream(m.inputStream())
-                    .bufferedReader().use { ViModel.parse(it.lineSequence()) }
-                p.loadModel(model.unigrams, model.bigrams, model.trigrams, model.bos)
+                val packed = ViModelBin.read(
+                    java.nio.ByteBuffer.wrap(m.readBytes())
+                )
+                if (packed != null) p.loadPacked(packed)
             }
         }
         return p

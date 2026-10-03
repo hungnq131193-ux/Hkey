@@ -24,7 +24,7 @@ import com.hkey.app.engine.LearningStore
 import com.hkey.app.engine.TelexEngine
 import com.hkey.app.engine.VniEngine
 import com.hkey.app.engine.TextContext
-import com.hkey.app.engine.ViModel
+import com.hkey.app.engine.ViModelBin
 import com.hkey.app.engine.ViSyllable
 import com.hkey.app.ui.KeyboardView
 import com.hkey.app.ui.KbKey
@@ -90,21 +90,23 @@ class HKeyIME : InputMethodService() {
         Thread {
             val words = resources.openRawResource(R.raw.vi_dict)
                 .bufferedReader().use { it.lineSequence().toList() }
-            val model = try {
-                java.util.zip.GZIPInputStream(resources.openRawResource(R.raw.vi_model))
-                    .bufferedReader().use { ViModel.parse(it.lineSequence()) }
-            } catch (e: Exception) {
-                null // thiếu model -> chạy với từ điển cơ bản
-            }
+            // 4.x: model nhị phân (mmap nếu asset không nén) — không parse
+            // string, không phình heap; thiếu/hỏng thì chạy lớp seed.
+            val packed = loadModelPacked()
+            val phrases = try {
+                resources.openRawResource(R.raw.vi_phrases)
+                    .bufferedReader().use { it.lineSequence().toList() }
+            } catch (e: Exception) { emptyList() }
             val learned = learnedStore.load()
             repeatHandler.post {
                 if (destroyed) return@post
                 predictor.addWords(words)
-                if (model != null) {
-                    predictor.loadModel(
-                        model.unigrams, model.bigrams, model.trigrams, model.bos
-                    )
-                }
+                if (packed != null) predictor.loadPacked(packed)
+                predictor.addPhrases(phrases.mapNotNull { l ->
+                    val t = l.trim()
+                    val i = t.indexOf(' ')
+                    if (i <= 0) null else t.substring(0, i) to t.substring(i + 1).trim()
+                })
                 if (learned != null) {
                     predictor.importLearned(learned.words, learned.bigrams)
                 }
@@ -135,6 +137,27 @@ class HKeyIME : InputMethodService() {
     /** 1.10: không cho phép fullscreen/extract mode — bàn phím luôn ở đáy
      *  màn hình kể cả landscape. */
     override fun onEvaluateFullscreenMode(): Boolean = false
+
+    /** mmap vi_model.bin nếu asset được lưu không nén (noCompress), fallback
+     *  đọc stream thường; null nếu file thiếu/hỏng (4.x). */
+    private fun loadModelPacked(): ViModelBin.Packed? {
+        try {
+            resources.openRawResourceFd(R.raw.vi_model)?.use { afd ->
+                afd.createInputStream().channel.use { ch ->
+                    val buf = ch.map(
+                        java.nio.channels.FileChannel.MapMode.READ_ONLY,
+                        afd.startOffset, afd.declaredLength
+                    )
+                    ViModelBin.read(buf)?.let { return it }
+                }
+            }
+        } catch (e: Exception) { /* fd không parcelable (asset nén) -> stream */ }
+        return try {
+            resources.openRawResource(R.raw.vi_model).use {
+                ViModelBin.read(java.nio.ByteBuffer.wrap(it.readBytes()))
+            }
+        } catch (e: Exception) { null }
+    }
 
     /** Đánh dấu dữ liệu học bẩn + hẹn ghi sau 15s (batch, không ghi mỗi phím). */
     private fun markLearnedDirty() {
@@ -241,9 +264,10 @@ class HKeyIME : InputMethodService() {
     }
 
     /** Học chuỗi từ — bỏ qua khi app đặt NO_PERSONALIZED_LEARNING hoặc
-     *  NO_SUGGESTIONS (1.4). */
+     *  NO_SUGGESTIONS (1.4). 4.x: không học từ trông như typo (lệch 1 ký tự
+     *  so với từ điển, không phải âm tiết VN, chưa từng biết). */
     private fun learn(prev: String, word: String) {
-        if (noLearning) return
+        if (noLearning || predictor.looksLikeTypo(word)) return
         predictor.recordSequence(prev, word)
         markLearnedDirty()
     }

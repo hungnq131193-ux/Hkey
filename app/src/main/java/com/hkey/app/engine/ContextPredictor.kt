@@ -303,7 +303,8 @@ class ContextPredictor {
         var personal: Int = 0,
         var lastSeen: Long = 0,
         var fromDict: Boolean = false,
-        var mid: Int = -1 // id trong lớp corpus (-1 = không có n-gram corpus)
+        var mid: Int = -1, // id trong lớp corpus (-1 = không có n-gram corpus)
+        var cased: String? = null // kiểu hoa user hay gõ ("iPhone") nếu khác lower (4.x)
     )
 
     /**
@@ -440,6 +441,77 @@ class ContextPredictor {
         indexCache = null
     }
 
+    /** Nạp model nhị phân (vi_model.bin mmap) — cùng kết quả loadModel nhưng
+     *  không parse string: flat arrays sẵn trong file, chỉ remap index file
+     *  -> mid (4.x). */
+    fun loadPacked(m: ViModelBin.Packed) {
+        for (i in m.words.indices) {
+            val w = m.words[i]
+            val e = vocabulary[w]
+            if (e == null) {
+                vocabulary[w] = Entry(w, deaccent(w), m.freqs[i], fromDict = true)
+            } else {
+                e.freq = m.freqs[i]
+                e.fromDict = true
+            }
+        }
+        if (vocabulary.size < (1 shl 20)) {
+            var id = 0
+            for (e in vocabulary.values) e.mid = id++
+            idWord = Array(vocabulary.size) { "" }
+            for (e in vocabulary.values) idWord[e.mid] = e.word
+            val idx2mid = IntArray(m.words.size) { midOf(m.words[it]) }
+            buildFlatPacked(idx2mid, m.biP, m.biN, m.biC,
+                m.triP2, m.triP1, m.triN, m.triC)
+            bosTop = m.bosIdx.map { m.words[it] }
+                .filter { vocabulary.containsKey(it) }
+        }
+        vocabVersion++
+        indexCache = null
+    }
+
+    private fun buildFlatPacked(
+        idx2mid: IntArray,
+        biP: IntArray, biN: IntArray, biC: IntArray,
+        tP2: IntArray, tP1: IntArray, tN: IntArray, tC: IntArray
+    ) {
+        val bi = ArrayList<Pair<Long, Int>>(biP.size)
+        for (i in biP.indices) {
+            val ip = idx2mid.getOrElse(biP[i]) { -1 }
+            val iN = idx2mid.getOrElse(biN[i]) { -1 }
+            if (ip >= 0 && iN >= 0) bi.add((ip.toLong() shl 20 or iN.toLong()) to biC[i])
+        }
+        bi.sortBy { it.first }
+        biKeys = LongArray(bi.size) { bi[it].first }
+        biCnt = IntArray(bi.size) { bi[it].second }
+        val tri = ArrayList<Pair<Long, Int>>(tP2.size)
+        for (i in tP2.indices) {
+            val i2 = idx2mid.getOrElse(tP2[i]) { -1 }
+            val i1 = idx2mid.getOrElse(tP1[i]) { -1 }
+            val iN = idx2mid.getOrElse(tN[i]) { -1 }
+            if (i2 >= 0 && i1 >= 0 && iN >= 0) tri.add(
+                (i2.toLong() shl 40) or (i1.toLong() shl 20) or iN.toLong() to tC[i]
+            )
+        }
+        tri.sortBy { it.first }
+        triKeys = LongArray(tri.size) { tri[it].first }
+        triCnt = IntArray(tri.size) { tri[it].second }
+    }
+
+    /** Từ ghép/từ điển cặp (vi_phrases.txt) gộp vào lớp seed bigram (4.x). */
+    fun addPhrases(pairs: List<Pair<String, String>>, freq: Int = 80) {
+        for ((p, n) in pairs) {
+            val a = p.lowercase().trim()
+            val b = n.lowercase().trim()
+            if (a.isEmpty() || b.isEmpty()) continue
+            val m = bigramModel.getOrPut(a) { mutableMapOf() }
+            if ((m[b] ?: 0) < freq) m[b] = freq
+        }
+    }
+
+    /** Kiểu hoa đã học của từ (nếu user hay gõ khác lower); fallback nguyên. */
+    fun displayOf(w: String): String = vocabulary[w]?.cased ?: w
+
     private fun buildFlatNgrams(
         bigrams: Map<String, Map<String, Int>>,
         trigrams: Map<String, Map<String, Int>>
@@ -475,21 +547,26 @@ class ContextPredictor {
     /** Dữ liệu học để lưu/xoá (3.6): từ có personal>0 hoặc từ học mới,
      *  kèm userBigram. Đối xứng với importLearned. */
     fun exportLearned(): Pair<List<Triple<String, Int, Long>>, List<Triple<String, String, Int>>> {
+        // 4.x: cột word mang kiểu hoa đã học (entry.cased) — file vẫn tương
+        // thích ngược: import lowercase để làm khóa, casing vào entry.cased.
         val words = vocabulary.values.filter { it.personal > 0 || !it.fromDict }
-            .map { Triple(it.word, it.personal, it.lastSeen) }
+            .map { Triple(it.cased ?: it.word, it.personal, it.lastSeen) }
         val bis = userBigram.flatMap { (p, m) -> m.map { (n, c) -> Triple(p, n, c) } }
         return words to bis
     }
 
     fun importLearned(words: List<Triple<String, Int, Long>>, bis: List<Triple<String, String, Int>>) {
         var changed = false
-        for ((w, p, t) in words) {
-            val e = vocabulary[w]
+        for ((w0, p, t) in words) {
+            val k = w0.lowercase()
+            val e = vocabulary[k]
             if (e != null) {
                 e.personal = p; e.lastSeen = t
+                if (w0 != k) e.cased = w0
             } else {
-                vocabulary[w] = Entry(w, deaccent(w), 0, p, t)
-                indexCache?.insert(vocabulary.getValue(w))
+                vocabulary[k] = Entry(k, deaccent(k), 0, p, t,
+                    cased = if (w0 == k) null else w0)
+                indexCache?.insert(vocabulary.getValue(k))
                 changed = true
             }
         }
@@ -508,6 +585,7 @@ class ContextPredictor {
         for (e in vocabulary.values) {
             e.personal = 0
             e.lastSeen = 0
+            e.cased = null
         }
         userBigram.clear()
         indexCache?.topCache = null
@@ -568,7 +646,8 @@ class ContextPredictor {
         return cands.asSequence()
             .filter { vocabulary[it]?.let { e -> eligible(e) } != false }
             .map { it to contextScore(p2, p1, it) }
-            .sortedByDescending { it.second }.take(3).map { it.first }.toList()
+            .sortedByDescending { it.second }.take(3)
+            .map { displayOf(it.first) }.toList()
     }
 
     /** Gợi ý hoàn thành từ theo prefix đang gõ, so khớp cả dạng không dấu;
@@ -597,7 +676,7 @@ class ContextPredictor {
             best.sortByDescending { it.second }
             if (best.size > 3) best.removeAt(3)
         }
-        return best.map { it.first }
+        return best.map { displayOf(it.first) } // 4.x: trả kiểu hoa đã học
     }
 
     /** prefix đã gõ còn là tiền tố của từ hợp lệ khác? (3.4 — chỉ hiện bản
@@ -766,20 +845,39 @@ class ContextPredictor {
         return true
     }
 
+    /** true nếu word trông như typo: không có trong từ điển, không phải âm
+     *  tiết VN, nhưng cách một từ điển đúng 1 lần sửa (4.x — không học typo). */
+    fun looksLikeTypo(word: String): Boolean {
+        val c = word.lowercase().trim()
+        if (c.length < 3 || c.any { !it.isLetter() } ||
+            vocabulary.containsKey(c) || ViSyllable.isValid(c)) return false
+        for (len in c.length - 1..c.length + 1) {
+            for (e in index.byLen[len].orEmpty()) {
+                if (eligible(e) && editsWithinOne(c, e.word)) return true
+            }
+        }
+        return false
+    }
+
     /** Tự học: từ mới vào vocab (freq=0, personal++) — gợi ý sau ≥2 lần gõ;
-     *  chuỗi từ ghi vào lớp cá nhân userBigram, không đụng corpus (3.2/3.6). */
+     *  chuỗi từ ghi vào lớp cá nhân userBigram, không đụng corpus (3.2/3.6).
+     *  4.x: giữ kiểu hoa user gõ (entry.cased) để gợi ý lại đúng dạng. */
     fun recordSequence(prev: String, current: String, now: Long = System.currentTimeMillis()) {
         val p = prev.lowercase().trim()
-        val c = current.lowercase().trim()
+        val raw = current.trim()
+        val c = raw.lowercase()
         // Chỉ học từ toàn chữ cái, độ dài hợp lý — không học chuỗi số/ký hiệu (2.3).
         if (c.isEmpty() || c.length > 24 || c.any { !it.isLetter() }) return
         val e = vocabulary[c]
+        val cased = if (raw == c) null else raw
         if (e != null) {
             e.personal++
             e.lastSeen = now
+            if (raw != c) e.cased = raw // giữ kiểu hoa mới nhất, không xoá bằng lần gõ thường
             indexCache?.topCache = null
         } else {
-            vocabulary[c] = Entry(c, deaccent(c), 0, personal = 1, lastSeen = now)
+            vocabulary[c] = Entry(c, deaccent(c), 0, personal = 1,
+                lastSeen = now, cased = cased)
                 .also { indexCache?.insert(it) }
             vocabVersion++
         }

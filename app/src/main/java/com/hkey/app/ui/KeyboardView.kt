@@ -203,7 +203,19 @@ class KeyboardView(context: Context) : View(context) {
         typeface = android.graphics.Typeface.DEFAULT
     }
 
+    /** Dọn mọi chạm đang dở + bong bóng/dải phụ + hẹn giờ — dùng khi đổi
+     *  trang (tránh phím "ma" khi đa chạm), ẩn phím, huỷ chạm. */
+    private fun clearTouch() {
+        touch.cancelAll()
+        handler.removeCallbacks(longPress)
+        handler.removeCallbacks(repeater)
+        lpPid = -1
+        hidePreview()
+        hideAlts()
+    }
+
     fun showPage(p: Page) {
+        clearTouch()
         page = p
         rows = when (p) {
             Page.LETTERS -> KbLayouts.letters(numberRow)
@@ -516,11 +528,7 @@ class KeyboardView(context: Context) : View(context) {
                 invalidate()
             }
             MotionEvent.ACTION_CANCEL -> {
-                touch.cancelAll()
-                handler.removeCallbacks(longPress)
-                handler.removeCallbacks(repeater)
-                hidePreview()
-                hideAlts()
+                clearTouch()
                 invalidate()
             }
         }
@@ -529,11 +537,7 @@ class KeyboardView(context: Context) : View(context) {
 
     /** Dọn repeat + popup khi bàn phím ẩn/detach — tránh leak window. */
     fun release() {
-        touch.cancelAll()
-        handler.removeCallbacks(longPress)
-        handler.removeCallbacks(repeater)
-        hidePreview()
-        hideAlts()
+        clearTouch()
     }
 
     override fun onDetachedFromWindow() {

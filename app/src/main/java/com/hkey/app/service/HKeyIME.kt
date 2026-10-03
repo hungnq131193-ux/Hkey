@@ -382,7 +382,13 @@ class HKeyIME : InputMethodService() {
         when {
             k.tag.startsWith("ch:") -> handleCharacter(k.tag.removePrefix("ch:"))
             k.tag.startsWith("p:") -> handlePunct(k.tag.removePrefix("p:"))
-            k.tag.startsWith("tx:") -> commitLiteral(k.tag.substring(3))
+            k.tag.startsWith("tx:") -> {
+                commitLiteral(k.tag.substring(3))
+                // Chọn emoji/phụ xong tự về bàn phím chữ (1.1.1)
+                if (kbView?.page == KeyboardView.Page.EMOJI) {
+                    kbView?.showPage(KeyboardView.Page.LETTERS)
+                }
+            }
             k.tag == "fn:space" -> handleSpace()
             k.tag == "fn:enter" -> handleEnter()
             k.tag == "fn:del" -> handleDelete()

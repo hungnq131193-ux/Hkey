@@ -18,7 +18,10 @@ class ContextPredictor {
         var personalBoost: Long = 200_000L,    // freq cá nhân trong completion/correction
         var adjacency: Long = 300_000_000L,    // thay 1 ký tự bằng phím kề QWERTY
         var sameBase: Long = 50_000_000L,      // ứng viên cùng thân từ (lệch dấu)
-        var minMargin: Double = 1.2            // điểm thắng phải vượt á quân ×minMargin
+        var minMargin: Double = 1.2,           // điểm thắng phải vượt á quân ×minMargin
+        var userTri: Long = 300_000_000L,      // 1.3: trigram cá nhân (dưới triPresent, trên backoff)
+        var recent: Long = 5_000_000L,         // 1.3: boost tối đa cho từ vừa dùng
+        var recentDays: Int = 14               // 1.3: boost mờ tuyến tính về 0 sau N ngày
     )
 
     var weights = Weights()
@@ -251,6 +254,11 @@ class ContextPredictor {
     /** Bigram cá nhân (tự học) — tách khỏi corpus để xoá/lưu riêng (3.6). */
     private val userBigram = mutableMapOf<String, MutableMap<String, Int>>()
 
+    /** 1.3: trigram cá nhân "p2|p1" -> next -> count. Cụm từ user hay gõ
+     *  ("tối nay đi") thắng bigram cá nhân, vẫn dưới trigram corpus cho
+     *  tới khi gõ lặp đủ nhiều. */
+    private val userTrigram = mutableMapOf<String, MutableMap<String, Int>>()
+
     /** Từ hay mở đầu câu (đếm từ token đầu câu của corpus). */
     private var bosTop: List<String> = emptyList()
 
@@ -354,16 +362,35 @@ class ContextPredictor {
 
     /** Điểm ngữ cảnh backoff: trigram > bigram > unigram + lớp cá nhân.
      *  bigramModel (viết tay) là lớp seed nhỏ giữ hành vi khi chưa nạp corpus. */
-    private fun contextScore(p2: String, p1: String, w: String): Long {
+    private fun contextScore(
+        p2: String, p1: String, w: String,
+        uTri: Map<String, Int>? = null
+    ): Long {
         val W = weights
         val id1 = midOf(p1)
         val idw = midOf(w)
         val t = if (p2.isEmpty()) 0 else corpusTrigram(midOf(p2), id1, idw)
         val b = corpusBigram(id1, idw) + (bigramModel[p1]?.get(w) ?: 0)
         val u = userBigram[p1]?.get(w) ?: 0
-        val uni = vocabulary[w]?.freq ?: 0
+        val ut = uTri?.get(w) ?: 0
+        val e = vocabulary[w]
         return (if (t > 0) W.triPresent else 0) + t * W.tri + b * W.bi +
-            u * W.user + uni * W.uni
+            u * W.user + ut * W.userTri + (e?.freq ?: 0) * W.uni +
+            recencyBoost(e?.lastSeen ?: 0L)
+    }
+
+    /** Lớp trigram cá nhân của ngữ cảnh (p2,p1) — tra 1 lần mỗi lượt gợi ý. */
+    private fun userTriOf(p2: String, p1: String): Map<String, Int>? =
+        if (p2.isEmpty()) null else userTrigram["$p2|$p1"]
+
+    /** 1.3: thưởng cho từ vừa dùng — tối đa weights.recent khi vừa gõ,
+     *  mờ tuyến tính về 0 sau recentDays ngày. Thói quen hiện tại thắng
+     *  thói quen cũ đã lãng quên. */
+    private fun recencyBoost(lastSeen: Long): Long {
+        if (lastSeen <= 0L) return 0L
+        val days = (System.currentTimeMillis() - lastSeen) / 86_400_000.0
+        if (days >= weights.recentDays) return 0L
+        return (weights.recent * (1.0 - days / weights.recentDays)).toLong()
     }
     private val index: Index
         get() = indexCache ?: buildIndex().also { indexCache = it }
@@ -545,17 +572,26 @@ class ContextPredictor {
     }
 
     /** Dữ liệu học để lưu/xoá (3.6): từ có personal>0 hoặc từ học mới,
-     *  kèm userBigram. Đối xứng với importLearned. */
-    fun exportLearned(): Pair<List<Triple<String, Int, Long>>, List<Triple<String, String, Int>>> {
+     *  kèm userBigram + userTrigram (1.3). Đối xứng với importLearned. */
+    fun exportLearned(): Triple<List<Triple<String, Int, Long>>, List<Triple<String, String, Int>>, List<UserTri>> {
         // 4.x: cột word mang kiểu hoa đã học (entry.cased) — file vẫn tương
         // thích ngược: import lowercase để làm khóa, casing vào entry.cased.
         val words = vocabulary.values.filter { it.personal > 0 || !it.fromDict }
             .map { Triple(it.cased ?: it.word, it.personal, it.lastSeen) }
         val bis = userBigram.flatMap { (p, m) -> m.map { (n, c) -> Triple(p, n, c) } }
-        return words to bis
+        val tris = userTrigram.flatMap { (k, m) ->
+            val p2 = k.substringBefore('|')
+            val p1 = k.substringAfter('|')
+            m.map { (n, c) -> UserTri(p2, p1, n, c) }
+        }
+        return Triple(words, bis, tris)
     }
 
-    fun importLearned(words: List<Triple<String, Int, Long>>, bis: List<Triple<String, String, Int>>) {
+    fun importLearned(
+        words: List<Triple<String, Int, Long>>,
+        bis: List<Triple<String, String, Int>>,
+        tris: List<UserTri> = emptyList()
+    ) {
         var changed = false
         for ((w0, p, t) in words) {
             val k = w0.lowercase()
@@ -573,6 +609,9 @@ class ContextPredictor {
         for ((p, n, c) in bis) {
             userBigram.getOrPut(p) { mutableMapOf() }[n] = c
         }
+        for (t in tris) {
+            userTrigram.getOrPut("${t.prev2}|${t.prev}") { mutableMapOf() }[t.next] = t.count
+        }
         if (changed) vocabVersion++
         indexCache?.topCache = null
     }
@@ -588,10 +627,12 @@ class ContextPredictor {
             e.cased = null
         }
         userBigram.clear()
+        userTrigram.clear()
         indexCache?.topCache = null
     }
 
-    /** Giới hạn số từ học; vượt thì bỏ mục ít dùng/cũ nhất (3.6). */
+    /** Giới hạn số từ học; vượt thì bỏ mục ít dùng/cũ nhất (3.6). Trigram
+     *  cá nhân cũng bị cắt ở max*4 cạnh (ít dùng nhất bỏ trước — 1.3). */
     fun boundLearned(max: Int) {
         val learned = vocabulary.values.filter { !it.fromDict }
             .sortedWith(compareBy({ it.personal }, { it.lastSeen }))
@@ -601,6 +642,14 @@ class ContextPredictor {
             idx?.remove(e)
         }
         if (learned.size > max) vocabVersion++
+        val triCap = max * 4
+        if (userTrigram.values.sumOf { it.size } > triCap) {
+            val keep = userTrigram.entries
+                .flatMap { (k, m) -> m.entries.map { (n, c) -> Triple(k, n, c) } }
+                .sortedByDescending { it.third }.take(triCap)
+            userTrigram.clear()
+            for ((k, n, c) in keep) userTrigram.getOrPut(k) { mutableMapOf() }[n] = c
+        }
     }
 
     /** Vị trí đầu tiên có sorted[i].base >= key. */
@@ -642,10 +691,12 @@ class ContextPredictor {
         }
         bigramModel[p1]?.keys?.let(cands::addAll)
         userBigram[p1]?.keys?.let(cands::addAll)
+        val uTri = userTriOf(p2, p1)
+        uTri?.keys?.let(cands::addAll)
         if (cands.isEmpty()) return index.top()
         return cands.asSequence()
             .filter { vocabulary[it]?.let { e -> eligible(e) } != false }
-            .map { it to contextScore(p2, p1, it) }
+            .map { it to contextScore(p2, p1, it, uTri) }
             .sortedByDescending { it.second }.take(3)
             .map { displayOf(it.first) }.toList()
     }
@@ -663,6 +714,7 @@ class ContextPredictor {
         val p2 = beforePrev?.lowercase()?.trim() ?: ""
         val base = deaccent(p)
         val idx = index
+        val uTri = userTriOf(p2, p1)
         val best = ArrayList<Pair<String, Long>>(4)
         var i = lowerBound(idx.sorted, base)
         while (i < idx.sorted.size && idx.sorted[i].base.startsWith(base)) {
@@ -670,7 +722,7 @@ class ContextPredictor {
             i++
             if (e.word == p || !eligible(e)) continue // từ mới học cần gõ ≥2 lần
             val score = e.freq + e.personal * weights.personalBoost +
-                contextScore(p2, p1, e.word)
+                contextScore(p2, p1, e.word, uTri)
             if (best.size == 3 && score <= best[2].second) continue
             best.add(e.word to score)
             best.sortByDescending { it.second }
@@ -723,16 +775,18 @@ class ContextPredictor {
                    val sameBase: Boolean, val ctx: Boolean, val adj: Boolean)
         val cands = mutableListOf<Cand>()
         val sameBaseCount = idx.byBase[base]?.count { eligible(it) } ?: 0
+        val uTri = userTriOf(p2, p1)
 
         fun offer(e: Entry, sameBase: Boolean) {
             val ctx = (bigramModel[p1]?.containsKey(e.word) == true) ||
                 (userBigram[p1]?.containsKey(e.word) == true) ||
+                (uTri?.containsKey(e.word) == true) ||
                 corpusBigram(midOf(p1), e.mid) > 0 ||
                 (p2.isNotEmpty() && corpusTrigram(midOf(p2), midOf(p1), e.mid) > 0)
             val adj = word.length == e.word.length &&
                 qwertyAdjacentEdit(word, e.word)
             val model = e.freq + e.personal * weights.personalBoost +
-                contextScore(p2, p1, e.word)
+                contextScore(p2, p1, e.word, uTri)
             var boosted = model
             if (sameBase) boosted += weights.sameBase
             if (adj) boosted += weights.adjacency
@@ -860,9 +914,15 @@ class ContextPredictor {
     }
 
     /** Tự học: từ mới vào vocab (freq=0, personal++) — gợi ý sau ≥2 lần gõ;
-     *  chuỗi từ ghi vào lớp cá nhân userBigram, không đụng corpus (3.2/3.6).
+     *  chuỗi từ ghi vào lớp cá nhân userBigram (+userTrigram khi có prev2,
+     *  1.3), không đụng corpus (3.2/3.6).
      *  4.x: giữ kiểu hoa user gõ (entry.cased) để gợi ý lại đúng dạng. */
-    fun recordSequence(prev: String, current: String, now: Long = System.currentTimeMillis()) {
+    fun recordSequence(
+        prev: String,
+        current: String,
+        now: Long = System.currentTimeMillis(),
+        prev2: String = ""
+    ) {
         val p = prev.lowercase().trim()
         val raw = current.trim()
         val c = raw.lowercase()
@@ -884,5 +944,13 @@ class ContextPredictor {
         if (p.isEmpty() || p.length > 24 || p.any { !it.isLetter() }) return
         val transitions = userBigram.getOrPut(p) { mutableMapOf() }
         transitions[c] = (transitions[c] ?: 0) + 1
+        val pp = prev2.lowercase().trim()
+        if (pp.isNotEmpty() && pp.length <= 24 && pp.all { it.isLetter() }) {
+            val tri = userTrigram.getOrPut("$pp|$p") { mutableMapOf() }
+            tri[c] = (tri[c] ?: 0) + 1
+        }
     }
 }
+
+/** 1.3: một cạnh trigram cá nhân (2 từ trước -> từ được gõ). */
+data class UserTri(val prev2: String, val prev: String, val next: String, val count: Int)

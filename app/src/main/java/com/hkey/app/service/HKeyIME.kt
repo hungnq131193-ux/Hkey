@@ -117,7 +117,7 @@ class HKeyIME : InputMethodService() {
                     if (i <= 0) null else t.substring(0, i) to t.substring(i + 1).trim()
                 })
                 if (learned != null) {
-                    predictor.importLearned(learned.words, learned.bigrams)
+                    predictor.importLearned(learned.words, learned.bigrams, learned.trigrams)
                 }
                 val (snapshot, version) = predictor.snapshotForIndex()
                 Thread {
@@ -179,14 +179,19 @@ class HKeyIME : InputMethodService() {
         if (!learnedDirty) return
         learnedDirty = false
         predictor.boundLearned(LearningStore.MAX_LEARNED_WORDS)
-        val (words, bis) = predictor.exportLearned()
-        val capped = if (bis.size > LearningStore.MAX_USER_BIGRAMS)
+        val (words, bis, tris) = predictor.exportLearned()
+        val cappedBis = if (bis.size > LearningStore.MAX_USER_BIGRAMS)
             bis.sortedByDescending { it.third }.take(LearningStore.MAX_USER_BIGRAMS)
         else bis
+        val cappedTris = if (tris.size > LearningStore.MAX_USER_TRIGRAMS)
+            tris.sortedByDescending { it.count }.take(LearningStore.MAX_USER_TRIGRAMS)
+        else tris
         val store = learnedStore
         val gen = learnedGen
         // 1.10: "xóa dữ liệu học" xảy ra giữa chừng -> hủy ghi snapshot cũ
-        Thread { if (gen == learnedGen) store.save(LearningStore.Data(words, capped)) }.start()
+        Thread {
+            if (gen == learnedGen) store.save(LearningStore.Data(words, cappedBis, cappedTris))
+        }.start()
     }
 
     /** Nút "Xóa dữ liệu học" ở MainActivity đặt cờ; IME tiêu thụ ở lần focus
@@ -335,10 +340,11 @@ class HKeyIME : InputMethodService() {
 
     /** Học chuỗi từ — bỏ qua khi app đặt NO_PERSONALIZED_LEARNING hoặc
      *  NO_SUGGESTIONS (1.4). 4.x: không học từ trông như typo (lệch 1 ký tự
-     *  so với từ điển, không phải âm tiết VN, chưa từng biết). */
-    private fun learn(prev: String, word: String) {
+     *  so với từ điển, không phải âm tiết VN, chưa từng biết).
+     *  1.3: truyền thêm từ trước nữa (prev2) để học trigram cá nhân. */
+    private fun learn(prev: String, word: String, prev2: String = "") {
         if (noLearning || predictor.looksLikeTypo(word)) return
-        predictor.recordSequence(prev, word)
+        predictor.recordSequence(prev, word, prev2 = prev2)
         markLearnedDirty()
     }
 
@@ -770,7 +776,7 @@ class HKeyIME : InputMethodService() {
         val word = expanded ?: fixed ?: typedWord
         currentInputConnection?.commitText(word, 1)
         tailTracker.append(word)
-        if (!tokenGlued) learn(prev, word)
+        if (!tokenGlued) learn(prev, word, prev2)
         lastCommittedWord = word
         lastAutoFix = if (fixed != null) AutoFix(word, typed, raw) else null
         currentComposingWord.clear()
@@ -906,7 +912,7 @@ class HKeyIME : InputMethodService() {
             ic.endBatchEdit()
         }
         contextCache = null
-        learn(contextWordBeforeCursor(), fix.typed)
+        contextPairBeforeCursor().let { learn(it.first, fix.typed, it.second) }
         return true
     }
 
@@ -929,7 +935,7 @@ class HKeyIME : InputMethodService() {
             ic.endBatchEdit()
         }
         contextCache = null
-        learn(contextWordBeforeCursor(), fix.typed)
+        contextPairBeforeCursor().let { learn(it.first, fix.typed, it.second) }
         lastCommittedWord = fix.typed
         requestSuggestions()
     }
@@ -976,7 +982,7 @@ class HKeyIME : InputMethodService() {
     private fun acceptSuggestion(word: String) {
         if (word.isEmpty()) return
         lastAutoFix = null
-        val prev = contextWordBeforeCursor()
+        val ctxPair = contextPairBeforeCursor()
         // 1.2: gợi ý trả chữ thường — áp lại kiểu hoa đang gõ / shift đầu câu
         val cased = when {
             currentComposingWord.isNotEmpty() ->
@@ -989,7 +995,7 @@ class HKeyIME : InputMethodService() {
         // commitText tự thay thế vùng composing nếu đang gõ dở
         currentInputConnection?.commitText("$cased ", 1)
         tailTracker.append("$cased ")
-        learn(prev, word)
+        learn(ctxPair.first, word, ctxPair.second)
         lastCommittedWord = cased
         currentComposingWord.clear()
         consumeShift()

@@ -2,7 +2,7 @@ package com.hkey.app.engine
 
 /**
  * Từ ngữ cảnh ngay trước con trỏ (B3). Chỉ lấy từ khi hai bên chỉ cách nhau
- * khoảng trắng; sau dấu kết câu . ! ? , xuống dòng \n hoặc ô trống trả về ""
+ * khoảng trắng; sau dấu kết câu . ! ? xuống dòng \n hoặc ô trống trả về ""
  * (đầu câu — BOS). Dấu , ; : hiện giữ hành vi cũ (fallback), quyết ở Phase 3
  * khi có số liệu mô hình.
  */

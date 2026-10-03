@@ -40,6 +40,84 @@ VI_LETTERS = frozenset(
 def is_vi_word(w: str) -> bool:
     return 0 < len(w) <= 20 and all(c in VI_LETTERS for c in w)
 
+# --- Luật âm tiết VN (port từ TelexRoundTripTest.isVietnameseSyllable) ---
+_ROWS = ["aáàảãạ", "ăắằẳẵặ", "âấầẩẫậ", "eéèẻẽẹ", "êếềểễệ", "iíìỉĩị",
+         "oóòỏõọ", "ôốồổỗộ", "ơớờởỡợ", "uúùủũụ", "ưứừửữự", "yýỳỷỹỵ"]
+_IDX = {}
+for _row in _ROWS:
+    for _i, _ch in enumerate(_row):
+        _IDX[_ch] = (_row[0], _i)
+_IDX['đ'] = ('đ', 0)
+
+def _deaccent(c):
+    b = _IDX.get(c, (c, 0))[0]
+    return {'đ': 'd', 'ă': 'a', 'â': 'a', 'ê': 'e', 'ô': 'o', 'ơ': 'o', 'ư': 'u'}.get(b, b)
+
+_ONSETS = ["ngh", "qu", "gi", "gh", "ng", "nh", "ch", "kh", "ph", "th", "tr",
+           "b", "c", "d", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "x", ""]
+_NUCLEI = {"a", "e", "i", "o", "u", "y", "ai", "ao", "au", "ay", "eo", "eu",
+           "ia", "ie", "iu", "oa", "oe", "oi", "oo", "ua", "ue", "ui", "uo",
+           "uy", "uu", "ya", "ye", "ieu", "yeu", "uya", "uye", "uyu", "uoi",
+           "uou", "oai", "oao", "oay", "oeo", "uay"}
+_CODAS = {"", "c", "ch", "m", "n", "ng", "nh", "p", "t"}
+
+def is_vi_syllable(w: str) -> bool:
+    """Một âm tiết VN hợp lệ (lọc English/Latin/markup lẫn trong corpus)."""
+    if not w:
+        return False
+    tones = 0
+    for i, c in enumerate(w):
+        if c not in _IDX and not ('a' <= c <= 'z'):
+            return False
+        b, t = _IDX.get(c, (c, 0))
+        if t > 0:
+            tones += 1
+        if b == 'đ' and i != 0:
+            return False
+    if tones > 1:
+        return False
+    plain = ''.join(_deaccent(c) for c in w)
+    for on in _ONSETS:
+        if plain.startswith(on):
+            rh = plain[len(on):]
+            for ln in range(len(rh), 0, -1):
+                if rh[:ln] in _NUCLEI and rh[ln:] in _CODAS:
+                    return True
+    return False
+
+# Token rõ ràng tiếng Anh/web trùng hình âm tiết VN (the~thẻ, long~lông…)
+# — giữ các dạng không dấu thật của từ VN (to, do, in, an, it, me, ten…).
+EN_STOP = set("""of the he we she and for you your with that this have has had are
+was were been they them their there these those what when where which who whom
+will would could should from into over under again between through during before
+after above below down off then once here why how all both each few more other
+some such not only own same than too very just now also well even still back
+much many most our out day get got give gave go went gone see saw seen take
+took make made know knew come came look use used work world life hand part
+place week case home year good first last little right great big high
+small large next early young important public bad able sure free full real best
+better low late hard major happy whole black white dark light easy strong true
+clear deep wide close open short past fine dead poor cold english
+web www html http https php asp jsp jpg jpeg png gif svg css xml rss ftp url
+uri org net com edu gov info biz site sites page pages link links file files
+data text image images video videos audio media index search edit post posts
+user users admin login logout email mail online offline server download upload
+software internet website webserver browser script code content category
+categories template infobox stub list article articles wikipedia wiki commons
+thumb left right center align class style div span table font color size
+width height src alt href title ref en de fr ru zh ja ko es pt vi
+at on is if or us no so up by my""".split())
+
+# Từ mở câu kiểu chat xếp trước corpus BOS (Wikipedia thiên văn phong báo).
+BOS_SEED = ["xin", "chào", "dạ", "tôi", "anh", "em", "vâng", "mình", "bạn",
+            "được", "không", "cảm", "ơn", "hôm", "nay", "sáng", "chiều",
+            "tối", "rồi", "ừ", "đi", "làm", "ăn", "ngủ", "chơi", "về",
+            "nhé", "ạ", "oke", "ok", "thưa"]
+
+def keep_token(w: str) -> bool:
+    return (is_vi_syllable(w) and w not in EN_STOP
+            and not any(c in 'fjwz' for c in w))
+
 REF_RE = re.compile(r"<ref[^>/]*/>|<ref[^>]*>.*?</ref>", re.S | re.I)
 TAG_RE = re.compile(r"<[^>]+>")
 LINK_RE = re.compile(r"\[\[(?:[^]|]*)\|([^]|]*)\]\]|\[\[([^]|]*)\]\]")
@@ -119,7 +197,7 @@ def main():
             continue
         uni.update(sent)
         bos[sent[0]] += 1
-    vocab = {w for w, c in uni.most_common() if c >= MIN_UNI}
+    vocab = {w for w, c in uni.most_common() if c >= MIN_UNI and keep_token(w)}
     vocab = set(sorted(vocab, key=lambda w: -uni[w])[:MAX_VOCAB])
     print(f"lượt 1: {npages_sent} câu, {len(uni)} unigram -> vocab {len(vocab)}", file=sys.stderr)
 
@@ -153,8 +231,12 @@ def main():
         f.write("# vi-model v1 | nguồn: Wikipedia tiếng Việt (CC BY-SA 4.0) | thống kê n-gram\n")
         for w in sorted(vocab, key=lambda w: -uni[w]):
             f.write(f"u\t{w}\t{uni[w]}\n")
-        for w, c in bos.most_common(TOP_BOS):
+        seen = set()
+        for w in BOS_SEED:
             if w in vocab:
+                f.write(f"s\t{w}\t0\n"); seen.add(w)
+        for w, c in bos.most_common(TOP_BOS):
+            if w in vocab and w not in seen:
                 f.write(f"s\t{w}\t{c}\n")
         for p, lst in sorted(by_prev.items()):
             for n, c in lst:

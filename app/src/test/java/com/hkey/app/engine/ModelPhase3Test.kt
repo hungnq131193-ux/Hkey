@@ -119,6 +119,13 @@ class ModelPhase3Test {
         assertNull(p.correction("di", null))
         // có số/ký hiệu: không sửa
         assertNull(p.correction("abc1", null))
+        // không phải dạng âm tiết VN (tiếng Anh/mã/URL): không bao giờ sửa
+        assertNull(p.correction("wiki", null))   // có 'w' — không phải chữ VN
+        assertNull(p.correction("url", null))    // coda "rl" vô lý
+        assertNull(p.correction("pour", null))
+        assertNull(p.correction("nobel", null))
+        // typo gõ thừa phím vẫn sửa được (gom lặp -> âm tiết VN)
+        assertEquals("nay", p.correction("nayy", null))
     }
 
     @Test

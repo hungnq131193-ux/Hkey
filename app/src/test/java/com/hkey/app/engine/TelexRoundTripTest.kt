@@ -46,46 +46,9 @@ class TelexRoundTripTest {
         else -> decomp(c).first
     }
 
-    // --- Luật âm tiết tiếng Việt (trên dạng đã bỏ dấu) ---
-    private val onsets = listOf(
-        "ngh", "qu", "gi", "gh", "ng", "nh", "ch", "kh", "ph", "th", "tr",
-        "b", "c", "d", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "x", ""
-    )
-    private val nuclei = setOf(
-        // 1 nguyên âm
-        "a", "e", "i", "o", "u", "y",
-        // 2 nguyên âm (dạng bỏ dấu: ăâ->a, ê->e, ôơ->o, ư->u)
-        "ai", "ao", "au", "ay", "eo", "eu", "ia", "ie", "iu",
-        "oa", "oe", "oi", "oo", "ua", "ue", "ui", "uo", "uy", "uu", "ya", "ye",
-        // 3 nguyên âm
-        "ieu", "yeu", "uya", "uye", "uyu", "uoi", "uou", "oai", "oao", "oay",
-        "oeo", "uay"
-    )
-    private val codas = setOf("", "c", "ch", "m", "n", "ng", "nh", "p", "t")
-
-    /** true nếu word là một âm tiết tiếng Việt hợp lệ về mặt hình thái. */
-    private fun isVietnameseSyllable(word: String): Boolean {
-        if (word.isEmpty()) return false
-        // Tối đa 1 ký tự mang dấu thanh; 'đ' chỉ đứng đầu.
-        var toneCount = 0
-        for ((i, c) in word.withIndex()) {
-            val (base, tone) = decomp(c)
-            if (c !in 'a'..'z' && c !in decompose) return false
-            if (tone > 0) toneCount++
-            if (base == 'đ' && i != 0) return false
-        }
-        if (toneCount > 1) return false
-        val plain = word.map { deaccent(it) }.joinToString("")
-        for (onset in onsets) {
-            if (!plain.startsWith(onset)) continue
-            val rhyme = plain.removePrefix(onset)
-            for (len in rhyme.length downTo 1) {
-                if (rhyme.substring(0, len) in nuclei && rhyme.substring(len) in codas)
-                    return true
-            }
-        }
-        return false
-    }
+    /** Luật âm tiết VN — impl chung nằm ở main (ViSyllable) để correction
+     *  dùng cùng một luật lọc. */
+    private fun isVietnameseSyllable(word: String) = ViSyllable.isValid(word)
 
     /** Sinh phím Telex chuẩn cho một từ có dấu (phím dấu thanh đặt cuối). */
     private fun telexEncode(word: String): String? {

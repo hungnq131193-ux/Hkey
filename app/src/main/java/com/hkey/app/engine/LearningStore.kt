@@ -14,6 +14,7 @@ class LearningStore(private val file: File) {
         val bigrams: List<Triple<String, String, Int>>    // prev, next, count
     )
 
+    @Synchronized // save gọi từ thread nền + lifecycle main — chống ghi chéo .tmp
     fun load(): Data? {
         if (!file.exists()) return null
         return try {
@@ -38,6 +39,7 @@ class LearningStore(private val file: File) {
         }
     }
 
+    @Synchronized
     fun save(data: Data) {
         val tmp = File(file.parentFile, file.name + ".tmp")
         val sb = StringBuilder().appendLine(VERSION)
@@ -50,6 +52,7 @@ class LearningStore(private val file: File) {
         }
     }
 
+    @Synchronized
     fun clear() {
         file.delete()
         File(file.parentFile, file.name + ".tmp").delete()

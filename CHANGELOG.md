@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.10 (versionCode 11)
+
+Sửa theo review model v1.0.9:
+
+- **Model lọc sạch:** loại ~34k token không phải âm tiết tiếng Việt (tiếng
+  Anh, tên Latin, mã web — `of`, `the`, `html`…) khỏi unigram/bigram/
+  trigram. Vocab còn ~6.000 âm tiết VN; model nén còn ~1.4 MB.
+- **Gợi ý đầu câu kiểu chat:** danh sách mở câu ưu tiên `xin/chào/dạ/tôi/
+  anh/em…` trước tần suất Wikipedia (vốn thiên văn phong bài báo).
+- **Không sửa từ không-VN:** `correction()` bỏ qua mọi từ không có dạng âm
+  tiết tiếng Việt (wiki, url, pour…) — chỉ còn đụng typo gõ thừa phím.
+  Tỷ lệ sửa nhầm trên eval: 1.3% → 0.08%.
+- **CI chạy test:** workflow thêm `testDebugUnitTest` trước khi build APK.
+- **Lỗi nhỏ:** ghi learned_data.tmp đồng bộ (chống ghi chéo 2 luồng); cờ
+  "xóa dữ liệu học" tiêu thụ ngay khi focus ô nhập; sửa chú thích
+  TextContext.
+- Số liệu eval mới (9.373 câu Wikipedia giữ riêng): nextTop3 33.8%,
+  tiết kiệm phím 18.6%, sửa nhầm 0.08%, heap model ~4 MB.
+
 ## 1.0.9 (versionCode 10)
 
 Bản tổng hợp 4 giai đoạn cải tiến — mỗi giai đoạn là một bước riêng, có thể

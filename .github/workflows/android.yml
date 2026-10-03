@@ -35,6 +35,9 @@ jobs:
       - name: Decode release keystore
         run: echo "${{ secrets.HKEY_KEYSTORE_B64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
 
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
       - name: Build Debug & Release APK
         run: ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
         env:

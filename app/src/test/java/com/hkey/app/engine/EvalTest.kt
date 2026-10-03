@@ -64,6 +64,7 @@ class EvalTest {
             var keysReal = 0L    // phím nếu dùng gợi ý (best-case)
             var fpCorrect = 0
             var fpTotal = 0
+            val fpSamples = mutableMapOf<String, String>() // từ đúng -> bản sửa oan
 
             for (s in sentences) {
                 for (i in s.indices) {
@@ -78,7 +79,10 @@ class EvalTest {
                     // correction FP trên từ đúng
                     if (w.length >= 3) {
                         fpTotal++
-                        if (p.correction(w, prev, prev2) != null) fpCorrect++
+                        p.correction(w, prev, prev2)?.let { fix ->
+                            fpCorrect++
+                            if (fpSamples.size < 30) fpSamples["$w→$fix"] = ""
+                        }
                     }
                     // completion: sớm nhất ở ký tự thứ k
                     if (w.length >= 2) {
@@ -101,7 +105,8 @@ class EvalTest {
                     "| compTop3@1/2/3=${compHitAt.joinToString("/")}/$compTotal " +
                     "| keysSaved=${"%.1f".format(100.0 * (keysIdeal - keysReal) / keysIdeal)}% " +
                     "| fpCorrect=$fpCorrect/$fpTotal=" +
-                    "%.3f".format(fpCorrect.toDouble() / fpTotal)
+                    "%.3f".format(fpCorrect.toDouble() / fpTotal) +
+                    " | fp mẫu: " + fpSamples.keys.take(15).joinToString(" ")
             )
         }
         File("build/eval-report.txt").also { it.parentFile?.mkdirs() }

@@ -629,6 +629,10 @@ class ContextPredictor {
     ): String? {
         val word = typedWord.lowercase().trim()
         if (word.length < 3 || word.any { !it.isLetter() }) return null
+        // Từ không có dạng âm tiết VN (tiếng Anh, mã, URL…) không bao giờ sửa;
+        // trừ typo gõ thừa phím lặp ("nayy" gom về "nay" vẫn là âm tiết VN).
+        if (!ViSyllable.isValid(word) && !ViSyllable.isValid(dedupLetters(word)))
+            return null
         if (vocabulary.containsKey(word)) return null
         val p1 = previousWord?.lowercase()?.trim() ?: ""
         val p2 = beforePrev?.lowercase()?.trim() ?: ""
@@ -681,6 +685,14 @@ class ContextPredictor {
         if ((winner.adj || winner.sameBase) && runnerUp != null &&
             winner.model >= runnerUp.model * weights.minMargin) return winner.word
         return null
+    }
+
+    /** Gom các ký tự lặp liền nhau thành 1: "nayy" -> "nay". */
+    private fun dedupLetters(w: String): String {
+        val sb = StringBuilder(w.length)
+        var last = ' '
+        for (c in w) if (c != last) { sb.append(c); last = c }
+        return sb.toString()
     }
 
     /** Hàng phím kề nhau trên QWERTY (kể cả hàng số sát mép). */

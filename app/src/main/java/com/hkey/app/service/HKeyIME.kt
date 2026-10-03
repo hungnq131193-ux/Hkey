@@ -139,10 +139,23 @@ class HKeyIME : InputMethodService() {
         Thread { store.save(LearningStore.Data(words, capped)) }.start()
     }
 
+    /** Nút "Xóa dữ liệu học" ở MainActivity đặt cờ; IME tiêu thụ ở lần focus
+     *  ô / hiện bàn phím kế tiếp (3.6). */
+    private fun consumeLearningCleared() {
+        if (prefs.getBoolean("learning_cleared", false)) {
+            prefs.edit().remove("learning_cleared").apply()
+            predictor.clearLearned()
+            learnedStore.clear()
+            learnedDirty = false
+            repeatHandler.removeCallbacks(saveLearned)
+        }
+    }
+
     override fun onStartInput(info: EditorInfo, restarting: Boolean) {
         super.onStartInput(info, restarting)
         rawMode = FieldMode.isRaw(info.inputType)
         computeAutoCap(info)
+        consumeLearningCleared() // tiêu thụ sớm ngay khi focus ô, không chờ view
     }
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
@@ -157,14 +170,7 @@ class HKeyIME : InputMethodService() {
         computeAutoCap(info)
         shiftOn = false
         shiftAuto = false
-        // Nút "Xóa dữ liệu học" ở MainActivity đặt cờ; tiêu thụ ở đây (3.6).
-        if (prefs.getBoolean("learning_cleared", false)) {
-            prefs.edit().remove("learning_cleared").apply()
-            predictor.clearLearned()
-            learnedStore.clear()
-            learnedDirty = false
-            repeatHandler.removeCallbacks(saveLearned)
-        }
+        consumeLearningCleared()
         optSound = prefs.getBoolean("key_sound", true)
         optVibrate = prefs.getBoolean("vibrate", true)
         // Chỉ inflate lại khi đổi settings hoặc chưa có view — S2.

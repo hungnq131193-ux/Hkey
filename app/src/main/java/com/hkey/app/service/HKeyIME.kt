@@ -248,6 +248,12 @@ class HKeyIME : InputMethodService() {
             kbView?.showPage(KeyboardView.Page.LETTERS)
             updateSuggestions()
         }
+        // View tái sử dụng không qua onCreateInputView -> đẩy cờ mới xuống
+        // mỗi lần hiện (sửa: tắt rung/âm vẫn còn hiệu lực tới khi inflate lại).
+        kbView?.let {
+            it.soundEnabled = optSound
+            it.vibrateEnabled = optVibrate
+        }
         updateAutoShift()
         if (BuildConfig.DEBUG) Log.d("HKeyIME", "onStartInputView ${(System.nanoTime() - t0) / 1_000_000.0} ms")
     }

@@ -410,7 +410,7 @@ class KeyboardView(context: Context) : View(context) {
         altOwner = lpPid
         hidePreview() // dải phụ thay bong bóng
         invalidateOverlay()
-        performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        if (vibrateEnabled) performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
     }
 
     private fun updateAltSel(x: Float) {

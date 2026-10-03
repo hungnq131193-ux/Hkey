@@ -6,12 +6,8 @@ import android.os.Handler
 import android.os.Looper
 import android.text.InputType
 import android.util.Log
-import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
-import android.view.MotionEvent
-import android.view.SoundEffectConstants
 import android.view.View
-import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -30,6 +26,8 @@ import com.hkey.app.engine.VniEngine
 import com.hkey.app.engine.TextContext
 import com.hkey.app.engine.ViModel
 import com.hkey.app.engine.ViSyllable
+import com.hkey.app.ui.KeyboardView
+import com.hkey.app.ui.KbKey
 import java.io.File
 
 class HKeyIME : InputMethodService() {
@@ -49,17 +47,18 @@ class HKeyIME : InputMethodService() {
     private var candidate2: TextView? = null
     private var candidate3: TextView? = null
 
-    private var lettersPage: View? = null
-    private var symbolsPage: View? = null
+    private var kbView: KeyboardView? = null
     private var shiftOn = false
     private var shiftAuto = false
+    private var shiftLocked = false // 2 chạm Shift = caps lock (3.x)
+    private var lastShiftTap = 0L
     private var autoCap = false
-    private val letterKeys = mutableListOf<TextView>()
-    private var shiftKey: TextView? = null
 
     private var inputView: View? = null
     private var appliedKbHeight = -1
     private var appliedKbSide = -1
+    private var appliedNumRow = false
+    private var appliedDark = true
     private var optSound = true
     private var optVibrate = true
     private var contextCache: Pair<String, String>? = null // (từ trước, từ trước nữa)
@@ -70,17 +69,12 @@ class HKeyIME : InputMethodService() {
     private var noSuggest = false // NO_SUGGESTIONS: Telex vẫn gõ, tắt gợi ý+sửa (1.4)
     private var noLearning = false // NO_PERSONALIZED_LEARNING/NO_SUGGESTIONS: không học (1.4)
     private var vietMode = true // EN/VI qua phím lang (2.x); EN = gõ thẳng
-    private var langKey: TextView? = null
     private var macros = emptyMap<String, String>() // gõ tắt "k=v" mỗi dòng (2.x)
+    private var optDoubleSpace = true // 3.x: space-space nhanh -> ". "
+    private var lastSpaceTap = 0L
     @Volatile private var destroyed = false
 
     private val repeatHandler = Handler(Looper.getMainLooper())
-    private val deleteRepeat = object : Runnable {
-        override fun run() {
-            handleDelete()
-            repeatHandler.postDelayed(this, 60)
-        }
-    }
 
     private val prefs get() = getSharedPreferences("hkey_settings", Context.MODE_PRIVATE)
     private val learnedFile get() = File(filesDir, "learned_data.tsv")
@@ -127,13 +121,13 @@ class HKeyIME : InputMethodService() {
 
     override fun onDestroy() {
         destroyed = true
-        repeatHandler.removeCallbacks(deleteRepeat) // 1.10: không giữ repeat sau khi chết
+        kbView?.release() // dọn repeat/popup của view
         persistLearned() // ghi theo lô khi service dừng (3.6)
         super.onDestroy()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
-        repeatHandler.removeCallbacks(deleteRepeat) // 1.10: ẩn phím -> dừng nhấn giữ ⌫
+        kbView?.release() // 1.10: ẩn phím -> dừng nhấn giữ ⌫, đóng popup
         persistLearned() // mất focus -> ghi luôn nếu bẩn
         super.onFinishInputView(finishingInput)
     }
@@ -211,16 +205,24 @@ class HKeyIME : InputMethodService() {
         computeAutoCap(info)
         shiftOn = false
         shiftAuto = false
+        shiftLocked = false
         consumeLearningCleared()
         optSound = prefs.getBoolean("key_sound", true)
         optVibrate = prefs.getBoolean("vibrate", true)
+        optDoubleSpace = prefs.getBoolean("double_space", true)
         // Chỉ inflate lại khi đổi settings hoặc chưa có view — S2.
         val kh = prefs.getInt("kb_height", 100)
         val ks = prefs.getInt("kb_side", 0)
-        if (inputView == null || kh != appliedKbHeight || ks != appliedKbSide) {
+        val kn = prefs.getBoolean("number_row", false)
+        val kd = prefs.getBoolean("dark_theme", true)
+        if (inputView == null || kh != appliedKbHeight || ks != appliedKbSide ||
+            kn != appliedNumRow || kd != appliedDark
+        ) {
+            appliedNumRow = kn
+            appliedDark = kd
             setInputView(onCreateInputView())
         } else {
-            showPage(lettersPage)
+            kbView?.showPage(KeyboardView.Page.LETTERS)
             updateSuggestions()
         }
         updateAutoShift()
@@ -276,7 +278,7 @@ class HKeyIME : InputMethodService() {
      *  Bật/tắt hai chiều: shift tự động tắt khi ngữ cảnh hết cần hoa;
      *  shift do người dùng bấm tay không bị ghi đè. */
     private fun updateAutoShift() {
-        if (!autoCap || currentComposingWord.isNotEmpty()) return
+        if (!autoCap || currentComposingWord.isNotEmpty() || shiftLocked) return
         val ic = currentInputConnection ?: return
         val caps = try { ic.getCursorCapsMode(currentInputType) } catch (e: Exception) { 0 }
         val wantCap = caps != 0 ||
@@ -303,9 +305,6 @@ class HKeyIME : InputMethodService() {
             insets
         }
 
-        letterKeys.clear()
-        shiftKey = null
-
         candidate1 = root.findViewById(R.id.candidate1)
         candidate2 = root.findViewById(R.id.candidate2)
         candidate3 = root.findViewById(R.id.candidate3)
@@ -314,139 +313,102 @@ class HKeyIME : InputMethodService() {
         candidate2?.setOnClickListener { onCandidateTap(candidate2) }
         candidate3?.setOnClickListener { onCandidateTap(candidate3) }
 
-        val pages = root.findViewById<FrameLayout>(R.id.kb_pages)
-        lettersPage = layoutInflater.inflate(R.layout.keyboard_letters, pages, false)
-        symbolsPage = layoutInflater.inflate(R.layout.keyboard_symbols, pages, false)
-        pages.addView(lettersPage)
-        pages.addView(symbolsPage)
-        symbolsPage?.visibility = View.GONE
-
-        applySizeSettings()
-        bindKeys(lettersPage)
-        bindKeys(symbolsPage)
-        updateSuggestions()
-
-        inputView = root
-        return root
-    }
-
-    private fun applySizeSettings() {
+        // 3.x: bàn phím tự vẽ — hit theo ô không rớt khe, trượt/đa chạm,
+        // nhấn giữ ra phụ, giữ ⌫ lặp, vuốt space dời con trỏ.
         val kh = prefs.getInt("kb_height", 100)
         val ks = prefs.getInt("kb_side", 0)
         appliedKbHeight = kh
         appliedKbSide = ks
-        val heightDp = 52 * kh / 100
-        val sideDp = ks
-        val density = resources.displayMetrics.density
-        val heightPx = (heightDp * density).toInt()
-        val sidePx = (sideDp * density).toInt()
-
-        for (page in listOf(lettersPage, symbolsPage)) {
-            page?.setPadding(sidePx + (3 * density).toInt(), page?.paddingTop ?: 0,
-                sidePx + (3 * density).toInt(), page?.paddingBottom ?: 0)
+        val kb = KeyboardView(this).apply {
+            configure(kh, ks, appliedDark, appliedNumRow)
+            soundEnabled = optSound
+            vibrateEnabled = optVibrate
+            langVi = vietMode
+            shifted = shiftOn
+            capsLocked = shiftLocked
+            onKey = { dispatchKey(it) }
+            onSpaceSwipe = { swipeCursor(it) }
         }
-        forEachView(lettersPage) { v -> if (v.tag != null) v.layoutParams?.height = heightPx }
-        forEachView(symbolsPage) { v -> if (v.tag != null) v.layoutParams?.height = heightPx }
+        kbView = kb
+        root.findViewById<FrameLayout>(R.id.kb_pages).addView(kb)
+
+        updateSuggestions()
+        inputView = root
+        return root
     }
 
-    private fun pressFeedback(v: View) {
-        if (optSound) {
-            v.playSoundEffect(SoundEffectConstants.CLICK)
-        }
-        if (optVibrate) {
-            v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    /** Điều phối mọi phím từ KeyboardView theo tag. */
+    private fun dispatchKey(k: KbKey) {
+        when {
+            k.tag.startsWith("ch:") -> handleCharacter(k.tag.removePrefix("ch:"))
+            k.tag.startsWith("p:") -> handlePunct(k.tag.removePrefix("p:"))
+            k.tag.startsWith("tx:") -> commitLiteral(k.tag.substring(3))
+            k.tag == "fn:space" -> handleSpace()
+            k.tag == "fn:enter" -> handleEnter()
+            k.tag == "fn:del" -> handleDelete()
+            k.tag == "fn:shift" -> toggleShift()
+            k.tag == "fn:sym" -> kbView?.showPage(KeyboardView.Page.SYMBOLS)
+            k.tag == "fn:abc" -> kbView?.showPage(KeyboardView.Page.LETTERS)
+            k.tag == "fn:emoji" -> kbView?.showPage(KeyboardView.Page.EMOJI)
+            k.tag == "fn:lang" -> toggleLang()
+            k.tag == "fn:ime" -> switchToNextInputMethod(false) // 3.x
+            k.tag == "fn:paste" -> pasteClipboard() // 3.x
         }
     }
 
-    /** Bấm là ăn ngay ở ACTION_DOWN, không chờ nhả tay. isPressed giữ hiệu ứng lún. */
-    private fun bindKey(tv: TextView, action: () -> Unit) {
-        tv.setOnTouchListener { v, e ->
-            when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    v.isPressed = true
-                    pressFeedback(v)
-                    action()
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    v.isPressed = e.x >= 0 && e.x < v.width && e.y >= 0 && e.y < v.height
-                    true
-                }
-                else -> {
-                    v.isPressed = false
-                    true
-                }
-            }
-        }
-        tv.setOnClickListener { action() } // đường a11y/performClick
+    /** Vuốt trên phím cách -> dời con trỏ (3.x). Đang gõ dở thì chốt trước. */
+    private fun swipeCursor(dir: Int) {
+        if (currentComposingWord.isNotEmpty()) commitComposing()
+        sendDownUpKeyEvents(
+            if (dir > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
+        )
+        contextCache = null
+        updateAutoShift()
     }
 
-    private fun bindKeys(root: View?) {
-        forEachView(root) { view ->
-            val tag = view.tag as? String ?: return@forEachView
-            val tv = view as? TextView ?: return@forEachView
-            when {
-                tag.startsWith("ch:") -> {
-                    letterKeys.add(tv)
-                    bindKey(tv) { handleCharacter(tag.removePrefix("ch:")) }
-                }
-                tag.startsWith("p:") -> {
-                    bindKey(tv) { handlePunct(tag.removePrefix("p:")) }
-                }
-                tag == "fn:space" -> bindKey(tv) { handleSpace() }
-                tag == "fn:enter" -> bindKey(tv) { handleEnter() }
-                tag == "fn:del" -> bindDeleteKey(tv)
-                tag == "fn:shift" -> {
-                    shiftKey = tv
-                    bindKey(tv) { toggleShift() }
-                }
-                tag == "fn:sym" -> bindKey(tv) { showPage(symbolsPage) }
-                tag == "fn:abc" -> bindKey(tv) { showPage(lettersPage) }
-                tag == "fn:lang" -> { // 2.x: đổi nhanh EN/VI
-                    langKey = tv
-                    tv.text = if (vietMode) "VI" else "EN"
-                    bindKey(tv) { toggleLang() }
-                }
+    /** 3.x: phím 📋 dán nội dung clipboard (nếu là text). */
+    private fun pasteClipboard() {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+        val clip = cm?.primaryClip
+        if (clip != null && clip.itemCount > 0) {
+            val t = clip.getItemAt(0).coerceToText(this)?.toString()
+            if (!t.isNullOrEmpty()) {
+                commitComposing()
+                currentInputConnection?.commitText(t, 1)
+                contextCache = null
+                updateSuggestions()
+                updateAutoShift()
             }
         }
     }
 
-    private fun forEachView(view: View?, block: (View) -> Unit) {
-        if (view == null) return
-        block(view)
-        if (view is ViewGroup) {
-            for (i in 0 until view.childCount) forEachView(view.getChildAt(i), block)
+    /** tx:/emoji/ký tự phụ: commit nguyên văn, không qua engine (3.x). */
+    private fun commitLiteral(s: String) {
+        if (shiftOn && !shiftLocked) {
+            shiftOn = false
+            shiftAuto = false
+            updateShiftUI()
         }
+        commitComposing()
+        currentInputConnection?.commitText(s, 1)
+        contextCache = null
+        updateSuggestions()
+        updateAutoShift()
     }
 
-    private fun bindDeleteKey(tv: TextView) {
-        tv.setOnTouchListener { v, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    v.isPressed = true
-                    pressFeedback(v)
-                    handleDelete()
-                    repeatHandler.postDelayed(deleteRepeat, 400)
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    v.isPressed = false
-                    repeatHandler.removeCallbacks(deleteRepeat)
-                    true
-                }
-                else -> true
-            }
-        }
-        tv.setOnClickListener { handleDelete() }
-    }
-
-    private fun showPage(page: View?) {
-        lettersPage?.visibility = if (page === lettersPage) View.VISIBLE else View.GONE
-        symbolsPage?.visibility = if (page === symbolsPage) View.VISIBLE else View.GONE
-    }
-
+    /** Shift: chạm 1 = hoa một chữ; chạm nhanh lần 2 = caps lock; chạm khi
+     *  đang lock = tắt hẳn (3.x). */
     private fun toggleShift() {
-        shiftOn = !shiftOn
+        val now = android.os.SystemClock.uptimeMillis()
+        when {
+            shiftLocked -> {
+                shiftOn = false
+                shiftLocked = false
+            }
+            shiftOn && now - lastShiftTap < 400 -> shiftLocked = true
+            else -> shiftOn = !shiftOn
+        }
+        lastShiftTap = now
         shiftAuto = false
         updateShiftUI()
     }
@@ -455,7 +417,7 @@ class HKeyIME : InputMethodService() {
     private fun toggleLang() {
         commitComposing()
         vietMode = !vietMode
-        langKey?.text = if (vietMode) "VI" else "EN"
+        kbView?.langVi = vietMode
         updateSuggestions()
     }
 
@@ -468,14 +430,8 @@ class HKeyIME : InputMethodService() {
         }.toMap()
 
     private fun updateShiftUI() {
-        for (key in letterKeys) {
-            val base = (key.tag as String).removePrefix("ch:")
-            key.text = if (shiftOn) base.uppercase() else base
-        }
-        shiftKey?.setTextColor(
-            if (shiftOn) resources.getColor(R.color.kb_accent, theme)
-            else resources.getColor(R.color.kb_text, theme)
-        )
+        kbView?.shifted = shiftOn
+        kbView?.capsLocked = shiftLocked
     }
 
     private fun handleCharacter(char: String) {
@@ -483,19 +439,11 @@ class HKeyIME : InputMethodService() {
         lastAutoFix = null // gõ ký tự mới = chấp nhận bản sửa, hết hoàn tác
         val c = if (shiftOn) char.uppercase() else char
         if (rawMode || !vietMode) { // EN mode: gõ thẳng, không Telex/gợi ý (2.x)
-            if (shiftOn) {
-                shiftOn = false
-                shiftAuto = false
-                updateShiftUI()
-            }
+            consumeShift()
             currentInputConnection?.commitText(c, 1)
             return
         }
-        if (shiftOn) {
-            shiftOn = false
-            shiftAuto = false
-            updateShiftUI()
-        }
+        consumeShift() // caps lock (shiftLocked) thì không tự tắt
         // Con trỏ sát một từ đã gõ (không có space) -> nối phím vào từ đó,
         // kiểu Unikey "bỏ dấu tự do": "hoan" + s -> "hoán", "hon" + w -> "hơn".
         if (currentComposingWord.isEmpty() && c.first().isLowerCase() && resumeWord(c)) return
@@ -504,6 +452,15 @@ class HKeyIME : InputMethodService() {
         currentInputConnection?.setComposingText(transformed, 1)
         updateSuggestions()
         if (BuildConfig.DEBUG) Log.d("HKeyIME", "handleCharacter ${(System.nanoTime() - t0) / 1_000} us")
+    }
+
+    /** Tắt shift 1 lần sau khi gõ ký tự; caps lock thì giữ nguyên (3.x). */
+    private fun consumeShift() {
+        if (shiftOn && !shiftLocked) {
+            shiftOn = false
+            shiftAuto = false
+            updateShiftUI()
+        }
     }
 
     /** Chuỗi chữ cái liền trước con trỏ (rỗng nếu trước con trỏ là space/số). */
@@ -626,7 +583,30 @@ class HKeyIME : InputMethodService() {
 
     private fun handleSpace() {
         commitComposing()
-        currentInputConnection?.commitText(" ", 1)
+        val ic = currentInputConnection
+        val now = android.os.SystemClock.uptimeMillis()
+        // 3.x: 2 lần space nhanh sau một từ -> ". " + bật viết hoa đầu câu
+        if (optDoubleSpace && now - lastSpaceTap < 600 && ic != null) {
+            val before = ic.getTextBeforeCursor(2, 0)
+            if (before != null && before.length == 2 &&
+                before[0].isLetter() && before[1] == ' '
+            ) {
+                ic.beginBatchEdit()
+                try {
+                    ic.deleteSurroundingText(1, 0)
+                    ic.commitText(". ", 1)
+                } finally {
+                    ic.endBatchEdit()
+                }
+                lastSpaceTap = 0L
+                contextCache = null
+                updateSuggestions()
+                updateAutoShift()
+                return
+            }
+        }
+        lastSpaceTap = now
+        ic?.commitText(" ", 1)
         contextCache = null
         updateSuggestions()
         updateAutoShift()
@@ -760,11 +740,7 @@ class HKeyIME : InputMethodService() {
         learn(prev, word)
         lastCommittedWord = cased
         currentComposingWord.clear()
-        if (shiftOn) {
-            shiftOn = false
-            shiftAuto = false
-            updateShiftUI()
-        }
+        consumeShift()
         contextCache = null
         updateSuggestions()
         updateAutoShift()

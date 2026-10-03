@@ -92,6 +92,27 @@
             android:layout_marginTop="8dp"
             android:text="Kiểm tra chính tả trước khi áp dấu" />
 
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/sw_number_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Hàng số phía trên" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/sw_double_space"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Hai lần cách → dấu chấm" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/sw_dark_theme"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Giao diện tối" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

@@ -62,6 +62,18 @@ class MainActivity : AppCompatActivity() {
             isChecked = prefs.getBoolean("spell_check", true)
             setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("spell_check", on).apply() }
         }
+        findViewById<SwitchCompat>(R.id.sw_number_row)?.apply {
+            isChecked = prefs.getBoolean("number_row", false)
+            setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("number_row", on).apply() }
+        }
+        findViewById<SwitchCompat>(R.id.sw_double_space)?.apply {
+            isChecked = prefs.getBoolean("double_space", true)
+            setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("double_space", on).apply() }
+        }
+        findViewById<SwitchCompat>(R.id.sw_dark_theme)?.apply {
+            isChecked = prefs.getBoolean("dark_theme", true)
+            setOnCheckedChangeListener { _, on -> prefs.edit().putBoolean("dark_theme", on).apply() }
+        }
         findViewById<EditText>(R.id.ed_macros)?.apply {
             setText(prefs.getString("macros", ""))
             doAfterTextChanged { prefs.edit().putString("macros", it?.toString() ?: "").apply() }

@@ -23,15 +23,17 @@ class LearningStore(private val file: File) {
             val lines = file.readLines()
             if (lines.firstOrNull() != VERSION) return null
             for (line in lines.drop(1)) {
-                val f = line.split('\t')
-                when (f.getOrNull(0)) {
-                    "w" -> if (f.size == 4) words.add(
-                        Triple(f[1], f[2].toInt(), f[3].toLong())
-                    )
-                    "b" -> if (f.size == 4) bigrams.add(
-                        Triple(f[1], f[2], f[3].toInt())
-                    )
-                }
+                try { // 1.10: dòng hỏng chỉ bỏ dòng đó, không bỏ cả file
+                    val f = line.split('\t')
+                    when (f.getOrNull(0)) {
+                        "w" -> if (f.size == 4) words.add(
+                            Triple(f[1], f[2].toInt(), f[3].toLong())
+                        )
+                        "b" -> if (f.size == 4) bigrams.add(
+                            Triple(f[1], f[2], f[3].toInt())
+                        )
+                    }
+                } catch (e: Exception) { /* bỏ dòng hỏng */ }
             }
             Data(words, bigrams)
         } catch (e: Exception) {

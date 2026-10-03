@@ -15,6 +15,8 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.hkey.app.BuildConfig
 import com.hkey.app.R
 import com.hkey.app.engine.ContextPredictor
@@ -77,6 +79,7 @@ class HKeyIME : InputMethodService() {
     private val learnedFile get() = File(filesDir, "learned_data.tsv")
     private val learnedStore get() = LearningStore(learnedFile)
     private var learnedDirty = false
+    @Volatile private var learnedGen = 0 // tăng khi "xóa dữ liệu học" — hủy ghi đang bay (1.10)
     private val saveLearned = Runnable { persistLearned() }
 
     override fun onCreate() {
@@ -117,14 +120,20 @@ class HKeyIME : InputMethodService() {
 
     override fun onDestroy() {
         destroyed = true
+        repeatHandler.removeCallbacks(deleteRepeat) // 1.10: không giữ repeat sau khi chết
         persistLearned() // ghi theo lô khi service dừng (3.6)
         super.onDestroy()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        repeatHandler.removeCallbacks(deleteRepeat) // 1.10: ẩn phím -> dừng nhấn giữ ⌫
         persistLearned() // mất focus -> ghi luôn nếu bẩn
         super.onFinishInputView(finishingInput)
     }
+
+    /** 1.10: không cho phép fullscreen/extract mode — bàn phím luôn ở đáy
+     *  màn hình kể cả landscape. */
+    override fun onEvaluateFullscreenMode(): Boolean = false
 
     /** Đánh dấu dữ liệu học bẩn + hẹn ghi sau 15s (batch, không ghi mỗi phím). */
     private fun markLearnedDirty() {
@@ -142,7 +151,9 @@ class HKeyIME : InputMethodService() {
             bis.sortedByDescending { it.third }.take(LearningStore.MAX_USER_BIGRAMS)
         else bis
         val store = learnedStore
-        Thread { store.save(LearningStore.Data(words, capped)) }.start()
+        val gen = learnedGen
+        // 1.10: "xóa dữ liệu học" xảy ra giữa chừng -> hủy ghi snapshot cũ
+        Thread { if (gen == learnedGen) store.save(LearningStore.Data(words, capped)) }.start()
     }
 
     /** Nút "Xóa dữ liệu học" ở MainActivity đặt cờ; IME tiêu thụ ở lần focus
@@ -151,6 +162,7 @@ class HKeyIME : InputMethodService() {
         if (prefs.getBoolean("learning_cleared", false)) {
             prefs.edit().remove("learning_cleared").apply()
             predictor.clearLearned()
+            learnedGen++ // 1.10: vô hiệu mọi ghi learned đang chạy nền
             learnedStore.clear()
             learnedDirty = false
             repeatHandler.removeCallbacks(saveLearned)
@@ -265,6 +277,16 @@ class HKeyIME : InputMethodService() {
 
     override fun onCreateInputView(): View {
         val root = layoutInflater.inflate(R.layout.keyboard_view, null)
+
+        // 1.10: targetSdk 35 ép edge-to-edge — độn đáy bằng thanh điều hướng
+        // gesture/3-button để hàng phím cuối không bị che.
+        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+            val nav = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            if (v.paddingBottom != nav.bottom) {
+                v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, nav.bottom)
+            }
+            insets
+        }
 
         letterKeys.clear()
         shiftKey = null

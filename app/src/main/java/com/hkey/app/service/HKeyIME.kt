@@ -60,6 +60,8 @@ class HKeyIME : InputMethodService() {
     private var currentInputType = 0 // inputType của ô đang focus (cho getCursorCapsMode)
     private var tokenGlued = false // từ đang gõ dính sau . @ / : — url/email/ip (1.1)
     private var rawMode = false // ô nhạy cảm: gõ thẳng, không Telex/gợi ý/học (B1,B2)
+    private var noSuggest = false // NO_SUGGESTIONS: Telex vẫn gõ, tắt gợi ý+sửa (1.4)
+    private var noLearning = false // NO_PERSONALIZED_LEARNING/NO_SUGGESTIONS: không học (1.4)
     @Volatile private var destroyed = false
 
     private val repeatHandler = Handler(Looper.getMainLooper())
@@ -157,6 +159,9 @@ class HKeyIME : InputMethodService() {
     override fun onStartInput(info: EditorInfo, restarting: Boolean) {
         super.onStartInput(info, restarting)
         rawMode = FieldMode.isRaw(info.inputType)
+        noSuggest = FieldMode.noSuggestions(info.inputType)
+        noLearning = noSuggest ||
+            info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
         currentInputType = info.inputType
         computeAutoCap(info)
         consumeLearningCleared() // tiêu thụ sớm ngay khi focus ô, không chờ view
@@ -201,6 +206,14 @@ class HKeyIME : InputMethodService() {
             variation != InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD &&
             variation != InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS &&
             variation != InputType.TYPE_TEXT_VARIATION_URI
+    }
+
+    /** Học chuỗi từ — bỏ qua khi app đặt NO_PERSONALIZED_LEARNING hoặc
+     *  NO_SUGGESTIONS (1.4). */
+    private fun learn(prev: String, word: String) {
+        if (noLearning) return
+        predictor.recordSequence(prev, word)
+        markLearnedDirty()
     }
 
     /** Con trỏ bị đổi chỗ (chạm chỗ khác/bôi chọn): chốt từ đang gõ, xoá buffer
@@ -522,16 +535,14 @@ class HKeyIME : InputMethodService() {
         // 1.3: kết quả không phải âm tiết VN (tiếng Anh/mã/URL) -> về phím thô
         val typedWord = if (ViSyllable.restorable(raw, typed)) raw else typed
         // 1.1: mảng trong url/email/ip ("io" trong "hu.io.vn") không sửa, không học.
-        val fixed = if (isProperNoun || tokenGlued || typedWord === raw) null
+        // 1.4: ô NO_SUGGESTIONS không tự sửa.
+        val fixed = if (isProperNoun || tokenGlued || typedWord === raw || noSuggest) null
             else predictor.correction(typed, prev, prev2)
             // 1.2: bản sửa trả chữ thường — áp lại kiểu hoa của từ đã gõ
             ?.let { TextContext.matchCase(typed, it) }
         val word = fixed ?: typedWord
         currentInputConnection?.commitText(word, 1)
-        if (!tokenGlued) {
-            predictor.recordSequence(prev, word)
-            markLearnedDirty()
-        }
+        if (!tokenGlued) learn(prev, word)
         lastCommittedWord = word
         lastAutoFix = if (fixed != null) AutoFix(word, typed, raw) else null
         currentComposingWord.clear()
@@ -597,8 +608,7 @@ class HKeyIME : InputMethodService() {
             ic.endBatchEdit()
         }
         contextCache = null
-        predictor.recordSequence(contextWordBeforeCursor(), fix.typed)
-        markLearnedDirty()
+        learn(contextWordBeforeCursor(), fix.typed)
         return true
     }
 
@@ -618,8 +628,7 @@ class HKeyIME : InputMethodService() {
             ic.endBatchEdit()
         }
         contextCache = null
-        predictor.recordSequence(contextWordBeforeCursor(), fix.typed)
-        markLearnedDirty()
+        learn(contextWordBeforeCursor(), fix.typed)
         lastCommittedWord = fix.typed
         updateSuggestions()
     }
@@ -658,8 +667,7 @@ class HKeyIME : InputMethodService() {
         }
         // commitText tự thay thế vùng composing nếu đang gõ dở
         currentInputConnection?.commitText("$cased ", 1)
-        predictor.recordSequence(prev, word)
-        markLearnedDirty()
+        learn(prev, word)
         lastCommittedWord = cased
         currentComposingWord.clear()
         if (shiftOn) {
@@ -673,7 +681,7 @@ class HKeyIME : InputMethodService() {
     }
 
     private fun updateSuggestions() {
-        if (rawMode) {
+        if (rawMode || noSuggest) {
             candidate1?.text = ""
             candidate2?.text = ""
             candidate3?.text = ""

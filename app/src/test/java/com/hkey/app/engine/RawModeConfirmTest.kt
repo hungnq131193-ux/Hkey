@@ -24,10 +24,18 @@ class RawModeConfirmTest {
         assertTrue(FieldMode.isRaw(text(InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)))
         assertTrue(FieldMode.isRaw(text(InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS)))
         assertTrue(FieldMode.isRaw(text(InputType.TYPE_TEXT_VARIATION_URI)))
-        assertTrue(FieldMode.isRaw(text(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)))
         assertTrue(FieldMode.isRaw(InputType.TYPE_CLASS_NUMBER))
         assertTrue(FieldMode.isRaw(InputType.TYPE_CLASS_PHONE))
         assertTrue(FieldMode.isRaw(InputType.TYPE_CLASS_DATETIME))
+    }
+
+    @Test
+    fun noSuggestionsStillAllowsTelex() {
+        // 1.4: cờ NO_SUGGESTIONS chỉ tắt gợi ý/sửa/học — Telex vẫn gõ được
+        assertFalse(FieldMode.isRaw(text(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)))
+        assertTrue(FieldMode.noSuggestions(text(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)))
+        assertFalse(FieldMode.noSuggestions(InputType.TYPE_CLASS_TEXT))
+        assertFalse(FieldMode.noSuggestions(text(InputType.TYPE_TEXT_VARIATION_NORMAL)))
     }
 
     @Test

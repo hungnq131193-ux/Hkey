@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.3.2 (versionCode 17)
+
+**12 giao diện bàn phím + kiểu bo góc**
+- Cài đặt → "Giao diện": Theo hệ thống (tự sáng/tối), Tối, Sáng, Đen
+  AMOLED, Đại dương, Thiên hà, Hoàng hôn, Anh đào, Bạc hà, Rừng xanh,
+  Cà phê, Bắc Âu. Nhiều theme nền gradient, phím trong suốt viền mảnh.
+- Cài đặt → "Kiểu phím": góc vuông / vừa / tròn.
+- Máy nâng cấp từ bản cũ giữ nguyên lựa chọn sáng/tối đã bật.
+
+**Gợi ý tôn trọng dấu đã gõ**
+- Gõ "đươ" không còn gợi "đuổi": dấu phụ (ă/â/ê/ô/ơ/ư/đ) và thanh đã gõ
+  phải khớp, ứng viên trái dấu bị loại; từ khớp đúng tiền tố có dấu được
+  cộng điểm.
+
+**Tự sửa bắt thêm lỗi gõ nhanh**
+- Đảo 2 ký tự kề trên chuỗi trước đây bị bỏ qua: "khôgn" → "không",
+  "kohng" → "không".
+- Sót 1 ký tự giữa từ: "trog" → "trong". Sót cuối từ coi như đang gõ dở,
+  không sửa oan; phương án phải thắng á quân ×2 mới chốt.
+
 ## 1.3.1 (versionCode 16)
 
 **Sửa lỗi chốt từ khác với chữ đang hiển thị**

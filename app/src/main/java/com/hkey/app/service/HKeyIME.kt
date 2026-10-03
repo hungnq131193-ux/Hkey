@@ -1,6 +1,8 @@
 package com.hkey.app.service
 
 import android.content.Context
+import android.content.res.Configuration
+import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
@@ -29,6 +31,7 @@ import com.hkey.app.engine.ViSyllable
 import com.hkey.app.ui.KeyboardView
 import com.hkey.app.ui.KbKey
 import com.hkey.app.ui.KbField
+import com.hkey.app.ui.KbThemes
 import java.io.File
 
 class HKeyIME : InputMethodService() {
@@ -60,7 +63,7 @@ class HKeyIME : InputMethodService() {
     private var appliedKbHeight = -1
     private var appliedKbSide = -1
     private var appliedNumRow = false
-    private var appliedDark = true
+    private var appliedUiSig = "" // 1.3.2: theme+kiểu phím đang áp — đổi -> inflate lại
     private var optSound = true
     private var optVibrate = true
     private var contextCache: Pair<String, String>? = null // (từ trước, từ trước nữa)
@@ -261,13 +264,13 @@ class HKeyIME : InputMethodService() {
         val kh = prefs.getInt("kb_height", 100)
         val ks = prefs.getInt("kb_side", 0)
         val kn = prefs.getBoolean("number_row", false)
-        val kd = prefs.getBoolean("dark_theme", true)
+        val uiSig = uiSignature()
         currentField = fieldOf(info.inputType)
         if (inputView == null || kh != appliedKbHeight || ks != appliedKbSide ||
-            kn != appliedNumRow || kd != appliedDark
+            kn != appliedNumRow || uiSig != appliedUiSig
         ) {
             appliedNumRow = kn
-            appliedDark = kd
+            appliedUiSig = uiSig
             setInputView(onCreateInputView())
             kbView?.showPage(startPage(info.inputType))
         } else {
@@ -405,6 +408,24 @@ class HKeyIME : InputMethodService() {
         }
     }
 
+    private fun isNight() = resources.configuration.uiMode and
+        Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+
+    /** 1.3.2: theme đã chọn ("system" = theo máy); bản cũ chỉ có dark_theme
+     *  -> prefId chuyển cờ cũ thành "dark"/"light". */
+    private fun themeId() = KbThemes.prefId(
+        prefs.getString("kb_theme", null), prefs.getBoolean("dark_theme", true))
+
+    private fun currentPalette() = KbThemes.palette(themeId(), isNight())
+
+    private fun currentCornerDp() =
+        KbThemes.cornerDp(prefs.getString("key_shape", "medium"))
+
+    /** Chữ ký giao diện đang áp (theme đã resolve + kiểu phím). */
+    private fun uiSignature() =
+        KbThemes.resolveId(themeId(), isNight()) + "|" +
+            (prefs.getString("key_shape", "medium") ?: "medium")
+
     override fun onCreateInputView(): View {
         val root = layoutInflater.inflate(R.layout.keyboard_view, null)
 
@@ -436,7 +457,7 @@ class HKeyIME : InputMethodService() {
             fieldKind = currentField
             recentEmoji = (prefs.getString("recent_emoji", "") ?: "")
                 .split('\n').filter { it.isNotEmpty() }
-            configure(kh, ks, appliedDark, appliedNumRow)
+            configure(kh, ks, currentPalette(), appliedNumRow, currentCornerDp())
             soundEnabled = optSound
             vibrateEnabled = optVibrate
             langVi = vietMode
@@ -452,8 +473,17 @@ class HKeyIME : InputMethodService() {
         root.findViewById<FrameLayout>(R.id.kb_pages).addView(kb)
 
         // 3.x: thanh candidate + nền theo cùng palette với phím (sáng/tối)
+        // 1.3.2: theme nền gradient thì vẽ GradientDrawable thay màu phẳng.
         val p = kb.palette
-        root.findViewById<View>(R.id.kb_root).setBackgroundColor(p.bg)
+        val rootBg = root.findViewById<View>(R.id.kb_root)
+        if (p.gradient) {
+            rootBg.background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(p.bgTop, p.bgBottom)
+            )
+        } else {
+            rootBg.setBackgroundColor(p.bg)
+        }
         root.findViewById<View>(R.id.cand_bar).setBackgroundColor(p.bar)
         root.findViewById<View>(R.id.cand_div1).setBackgroundColor(p.divider)
         root.findViewById<View>(R.id.cand_div2).setBackgroundColor(p.divider)
@@ -770,7 +800,10 @@ class HKeyIME : InputMethodService() {
         val fixed = if (expanded != null || isProperNoun || tokenGlued ||
             typedWord === raw || noSuggest
         ) null
-            else predictor.correction(typed, prev, prev2)
+            // 1.3.2: correction bỏ qua chuỗi không-phải-âm-tiết -> typoFix
+            // bắt lỗi đảo ký tự / sót ký tự giữa từ ("khôgn" -> "không")
+            else (predictor.correction(typed, prev, prev2)
+                ?: predictor.typoFix(typed, prev, prev2))
             // 1.2: bản sửa trả chữ thường — áp lại kiểu hoa của từ đã gõ
             ?.let { TextContext.matchCase(typed, it) }
         val word = expanded ?: fixed ?: typedWord
@@ -1044,6 +1077,7 @@ class HKeyIME : InputMethodService() {
             val fix = restore
                 ?: if (tokenGlued || predictor.isPrefixOfKnownWord(current)) null
                 else predictor.correction(current, ctx, ctx2)
+                    ?: predictor.typoFix(current, ctx, ctx2)
             // 1.2: hiện gợi ý đúng kiểu hoa để chạm vào ăn ngay
             candidate1?.text = completions.getOrNull(0)
                 ?.let { TextContext.matchCase(current, it) } ?: ""

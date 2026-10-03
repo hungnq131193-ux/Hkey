@@ -210,34 +210,6 @@ object KbLayouts {
     }
 }
 
-class KbPalette(
-    val key: Int, val keyPressed: Int, val func: Int, val funcPressed: Int,
-    val text: Int, val dim: Int, val accent: Int, val popupBg: Int,
-    val bg: Int, val bar: Int, val divider: Int,
-    val shadow: Int, val enter: Int, val enterPressed: Int, val onAccent: Int
-) {
-    companion object {
-        val DARK = KbPalette(
-            key = 0xFF33363C.toInt(), keyPressed = 0xFF4B4F57.toInt(),
-            func = 0xFF26292E.toInt(), funcPressed = 0xFF3D4148.toInt(),
-            text = 0xFFF1F3F4.toInt(), dim = 0xFF9AA0A6.toInt(),
-            accent = 0xFF8AB4F8.toInt(), popupBg = 0xFF44484F.toInt(),
-            bg = 0xFF1A1C20.toInt(), bar = 0xFF1A1C20.toInt(), divider = 0xFF33363C.toInt(),
-            shadow = 0xFF0E0F12.toInt(), enter = 0xFF4C8DF6.toInt(),
-            enterPressed = 0xFF3A73D1.toInt(), onAccent = 0xFFFFFFFF.toInt()
-        )
-        val LIGHT = KbPalette(
-            key = 0xFFFFFFFF.toInt(), keyPressed = 0xFFDADCE0.toInt(),
-            func = 0xFFD3D7DC.toInt(), funcPressed = 0xFFB9BEC5.toInt(),
-            text = 0xFF202124.toInt(), dim = 0xFF5F6368.toInt(),
-            accent = 0xFF1A73E8.toInt(), popupBg = 0xFFFFFFFF.toInt(),
-            bg = 0xFFECEEF1.toInt(), bar = 0xFFECEEF1.toInt(), divider = 0xFFD3D7DC.toInt(),
-            shadow = 0xFFB4B9C0.toInt(), enter = 0xFF1A73E8.toInt(),
-            enterPressed = 0xFF1559B8.toInt(), onAccent = 0xFFFFFFFF.toInt()
-        )
-    }
-}
-
 /** Bàn phím tự vẽ: một View duy nhất, hit theo Ô (không rớt vào khe giữa
  *  các phím), trượt ngón đổi phím, đa chạm, nhấn giữ ra ký tự phụ, giữ ⌫
  *  lặp xóa, vuốt space dời con trỏ, TalkBack qua ExploreByTouchHelper.
@@ -310,8 +282,10 @@ class KeyboardView(context: Context) : View(context) {
      *  nằm trong view (gán về phím gần nhất) — dưới view là vùng gesture/nav
      *  của hệ thống, chạm vào đó bàn phím bị ẩn (1.3.1). */
     private val padBottomV = 14f * density
-    private val corner = 7f * density
-    private val shadowPx = 1.2f * density
+    // 1.3.2: bo góc theo kiểu phím (vuông/vừa/tròn), bóng theo theme
+    private var corner = 7f * density
+    private var shadowPx = 1.2f * density
+    private val strokeW = 1f * density
     private val swipeStartPx = 22 * density // vuốt space: phải vượt ngưỡng này mới dời con trỏ
     private val swipeStepPx = 12 * density  // mỗi nấc tiếp theo = 1 ký tự
     /** 1.3: bề rộng tối đa vùng phím — tablet/màn gập không bị kéo dãn
@@ -358,6 +332,10 @@ class KeyboardView(context: Context) : View(context) {
         strokeWidth = 1.9f * density
     }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1f * resources.displayMetrics.density
+    }
     private val path = Path()
     private val tmpRect = RectF()
     private val pressedKeys = HashSet<KbKey>()
@@ -411,11 +389,17 @@ class KeyboardView(context: Context) : View(context) {
         invalidate()
     }
 
-    /** Áp kích thước/giao diện từ prefs; gọi sau khi đổi settings. */
-    fun configure(heightPct: Int, sideDp: Int, dark: Boolean, numRow: Boolean) {
+    /** Áp kích thước/giao diện từ prefs; gọi sau khi đổi settings.
+     *  1.3.2: nhận palette của theme đã chọn + bo góc (dp) theo kiểu phím. */
+    fun configure(
+        heightPct: Int, sideDp: Int, pal: KbPalette, numRow: Boolean,
+        cornerDp: Float = 7f
+    ) {
         keyHeightPx = ((52 * heightPct / 100) * density).toInt()
         sidePx = (sideDp * density).toInt()
-        palette = if (dark) KbPalette.DARK else KbPalette.LIGHT
+        corner = cornerDp * density
+        shadowPx = pal.shadowDp * density
+        palette = pal
         numberRow = numRow
         showPage(page)
     }
@@ -623,7 +607,7 @@ class KeyboardView(context: Context) : View(context) {
                 k.func -> palette.func
                 else -> palette.key
             }
-            if (!isTab) {
+            if (!isTab && shadowPx > 0f) {
                 keyPaint.color = palette.shadow
                 tmpRect.set(a.draw)
                 tmpRect.offset(0f, shadowPx)
@@ -631,12 +615,20 @@ class KeyboardView(context: Context) : View(context) {
             }
             keyPaint.color = bg
             c.drawRoundRect(a.draw, corner, corner, keyPaint)
+            // 1.3.2: viền mảnh cho theme phím trong suốt trên nền gradient
+            if (!isTab && !isEnter && palette.keyStroke != 0) {
+                borderPaint.color = palette.keyStroke
+                tmpRect.set(a.draw)
+                tmpRect.inset(strokeW / 2, strokeW / 2)
+                c.drawRoundRect(tmpRect, corner, corner, borderPaint)
+            }
         }
 
         val fg = when {
             isEnter -> palette.onAccent
             k.tag == "fn:shift" && upperCase() -> palette.accent
             k.tag == "fn:lang" -> palette.accent
+            k.func -> palette.funcText
             else -> palette.text
         }
         when (k.tag) {

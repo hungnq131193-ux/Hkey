@@ -106,12 +106,31 @@
             android:layout_marginTop="8dp"
             android:text="Hai lần cách → dấu chấm" />
 
-        <androidx.appcompat.widget.SwitchCompat
-            android:id="@+id/sw_dark_theme"
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Giao diện"
+            android:textStyle="bold" />
+
+        <Spinner
+            android:id="@+id/sp_theme"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Giao diện tối" />
+            android:layout_marginTop="4dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Kiểu phím"
+            android:textStyle="bold" />
+
+        <Spinner
+            android:id="@+id/sp_shape"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp" />
 
         <TextView
             android:layout_width="wrap_content"

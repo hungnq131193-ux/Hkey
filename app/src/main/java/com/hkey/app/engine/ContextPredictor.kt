@@ -21,7 +21,9 @@ class ContextPredictor {
         var minMargin: Double = 1.2,           // điểm thắng phải vượt á quân ×minMargin
         var userTri: Long = 300_000_000L,      // 1.3: trigram cá nhân (dưới triPresent, trên backoff)
         var recent: Long = 5_000_000L,         // 1.3: boost tối đa cho từ vừa dùng
-        var recentDays: Int = 14               // 1.3: boost mờ tuyến tính về 0 sau N ngày
+        var recentDays: Int = 14,              // 1.3: boost mờ tuyến tính về 0 sau N ngày
+        var exactPrefix: Long = 5_000_000L,    // 1.3.2: completion khớp đúng dấu đã gõ
+        var typoMargin: Double = 2.0           // 1.3.2: typoFix không ngữ cảnh phải thắng ×2
     )
 
     var weights = Weights()
@@ -702,37 +704,73 @@ class ContextPredictor {
     }
 
     /** Gợi ý hoàn thành từ theo prefix đang gõ, so khớp cả dạng không dấu;
-     *  xếp hạng = tần suất + cá nhân + điểm ngữ cảnh (3.4). */
+     *  xếp hạng = tần suất + cá nhân + điểm ngữ cảnh (3.4).
+     *  1.3.2: bỏ ứng viên trái dấu đã gõ (gõ \"đươ\" không gợi \"đuổi\"; đã
+     *  có dấu sắc thì chỉ gợi từ dấu sắc), ưu tiên từ khớp đúng tiền tố có
+     *  dấu; [limit] cho thanh gợi ý lấy dư để lọc trùng. */
     fun completions(
         prefix: String,
         previousWord: String? = null,
-        beforePrev: String? = null
+        beforePrev: String? = null,
+        limit: Int = 3
     ): List<String> {
         val p = prefix.lowercase().trim()
-        if (p.isEmpty()) return emptyList()
+        if (p.isEmpty() || limit <= 0) return emptyList()
         val p1 = previousWord?.lowercase()?.trim() ?: ""
         val p2 = beforePrev?.lowercase()?.trim() ?: ""
         val base = deaccent(p)
         val idx = index
         val uTri = userTriOf(p2, p1)
-        val best = ArrayList<Pair<String, Long>>(4)
+        val best = ArrayList<Pair<String, Long>>(limit + 1)
         var i = lowerBound(idx.sorted, base)
         while (i < idx.sorted.size && idx.sorted[i].base.startsWith(base)) {
             val e = idx.sorted[i]
             i++
             if (e.word == p || !eligible(e)) continue // từ mới học cần gõ ≥2 lần
-            val score = e.freq + e.personal * weights.personalBoost +
+            if (!marksCompatible(p, e.word)) continue
+            var score = e.freq + e.personal * weights.personalBoost +
                 contextScore(p2, p1, e.word, uTri)
-            if (best.size == 3 && score <= best[2].second) continue
+            // Chỉ boost khi prefix có dấu — gõ "ho" (không dấu) không để
+            // "hoa" đè "hôm"; gõ "hô" thì "hôm" thắng "hoa".
+            if (p != base && e.word.startsWith(p)) score += weights.exactPrefix
+            if (best.size == limit && score <= best[limit - 1].second) continue
             best.add(e.word to score)
             best.sortByDescending { it.second }
-            if (best.size > 3) best.removeAt(3)
+            if (best.size > limit) best.removeAt(limit)
         }
         return best.map { displayOf(it.first) } // 4.x: trả kiểu hoa đã học
     }
 
+    /** Dấu phụ của ký tự (giữ ă/â/ê/ô/ơ/ư/đ, bỏ thanh): 'ấ'->'â', 'a'->'a'. */
+    private fun markOf(c: Char): Char = ViGlyphs.decomposed(c.lowercaseChar()).first
+
+    /** Thanh điệu của cả từ (0 = chưa có). */
+    private fun toneOf(s: String): Int {
+        var t = 0
+        for (c in s) {
+            val v = ViGlyphs.decomposed(c.lowercaseChar()).second
+            if (v > 0) t = v
+        }
+        return t
+    }
+
+    /** [cand] có thể là kết quả gõ tiếp từ [typed] không: mọi dấu phụ đã gõ
+     *  phải giữ đúng vị trí, thanh đã gõ phải trùng (vị trí thanh tự do —
+     *  \"hoà\"/\"hòa\" đều hợp). Ký tự chưa dấu thì cho phép thêm dấu sau. */
+    internal fun marksCompatible(typed: String, cand: String): Boolean {
+        if (cand.length < typed.length) return false
+        for (i in typed.indices) {
+            val mt = markOf(typed[i])
+            if (ViGlyphs.bareChar(typed[i]) != ViGlyphs.bareChar(cand[i])) return false
+            if (mt != ViGlyphs.bareChar(typed[i]) && markOf(cand[i]) != mt) return false
+        }
+        val tt = toneOf(typed)
+        return tt == 0 || toneOf(cand) == tt
+    }
+
     /** prefix đã gõ còn là tiền tố của từ hợp lệ khác? (3.4 — chỉ hiện bản
-     *  sửa khi từ không thể là khúc đầu của từ đúng). */
+     *  sửa khi từ không thể là khúc đầu của từ đúng). 1.3.2: tiền tố phải
+     *  tương thích dấu đã gõ. */
     fun isPrefixOfKnownWord(word: String): Boolean {
         val w = word.lowercase().trim()
         if (w.isEmpty()) return false
@@ -741,9 +779,77 @@ class ContextPredictor {
         var i = lowerBound(idx.sorted, base)
         while (i < idx.sorted.size && idx.sorted[i].base.startsWith(base)) {
             val e = idx.sorted[i++]
-            if (e.word != w && e.word.length > w.length && eligible(e)) return true
+            if (e.word != w && e.word.length > w.length && eligible(e) &&
+                marksCompatible(w, e.word)) return true
         }
         return false
+    }
+
+    /**
+     * 1.3.2: sửa lỗi gõ cho chuỗi KHÔNG phải âm tiết VN (correction() bỏ
+     * qua chúng để bảo vệ tiếng Anh/mã). Chỉ nhận bằng chứng typo mạnh mà
+     * tiếng Anh hầu như không trùng: đảo 2 ký tự kề (\"khôgn\"->\"không\") hoặc
+     * sót 1 ký tự GIỮA từ (\"trog\"->\"trong\", \"khôg\"->\"không\"); sót ở cuối
+     * là gõ dở, không sửa. Chuỗi thuần ASCII so trên dạng không dấu (\"kohng\"
+     * -> \"không\"). Ứng viên thắng phải vượt á quân ×typoMargin (hoặc
+     * ×minMargin khi có ngữ cảnh ủng hộ) — không chắc thì không sửa.
+     */
+    fun typoFix(
+        typedWord: String,
+        previousWord: String?,
+        beforePrev: String? = null
+    ): String? {
+        val word = typedWord.lowercase().trim()
+        if (word.length < 3 || word.any { !it.isLetter() }) return null
+        if (vocabulary.containsKey(word) || ViSyllable.isValid(word)) return null
+        val ascii = word.all { it.code < 128 }
+        val p1 = previousWord?.lowercase()?.trim() ?: ""
+        val p2 = beforePrev?.lowercase()?.trim() ?: ""
+        val uTri = userTriOf(p2, p1)
+        val idx = index
+        class Cand(val word: String, val model: Long, val ctx: Boolean)
+        val cands = ArrayList<Cand>()
+        for (len in word.length..word.length + 1) {
+            for (e in idx.byLen[len].orEmpty()) {
+                if (!eligible(e)) continue
+                val target = if (ascii) e.base else e.word
+                val hit = if (len == word.length) transposedOnce(word, target)
+                    else insertedInside(word, target)
+                if (!hit) continue
+                val ctx = (bigramModel[p1]?.containsKey(e.word) == true) ||
+                    (userBigram[p1]?.containsKey(e.word) == true) ||
+                    (uTri?.containsKey(e.word) == true) ||
+                    corpusBigram(midOf(p1), e.mid) > 0
+                val model = e.freq + e.personal * weights.personalBoost +
+                    contextScore(p2, p1, e.word, uTri)
+                cands.add(Cand(e.word, model, ctx))
+            }
+        }
+        if (cands.isEmpty()) return null
+        cands.sortByDescending { it.model }
+        val w = cands[0]
+        val r = cands.getOrNull(1) ?: return w.word
+        val margin = if (w.ctx) weights.minMargin else weights.typoMargin
+        return if (w.model >= r.model * margin) w.word else null
+    }
+
+    /** a, b cùng độ dài và khác nhau đúng bởi một lần đảo 2 ký tự kề. */
+    private fun transposedOnce(a: String, b: String): Boolean {
+        if (a.length != b.length) return false
+        var i = 0
+        while (i < a.length && a[i] == b[i]) i++
+        if (i >= a.length - 1) return false
+        return a[i] == b[i + 1] && a[i + 1] == b[i] &&
+            a.regionMatches(i + 2, b, i + 2, a.length - i - 2)
+    }
+
+    /** b = a chèn thêm đúng 1 ký tự ở GIỮA (không phải đầu/cuối). */
+    private fun insertedInside(a: String, b: String): Boolean {
+        if (b.length != a.length + 1) return false
+        var i = 0
+        while (i < a.length && a[i] == b[i]) i++
+        if (i == 0 || i >= a.length) return false // chèn đầu/cuối: không nhận
+        return a.regionMatches(i, b, i + 1, a.length - i)
     }
 
     /**

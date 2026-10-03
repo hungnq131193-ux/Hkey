@@ -306,6 +306,10 @@ class KeyboardView(context: Context) : View(context) {
     private val marginH = 2.75f * density
     private val marginV = 4f * density
     private val padV = 4f * density
+    /** Đệm chạm dưới đáy rộng hơn padV: chạm trượt xuống mép hàng cuối vẫn
+     *  nằm trong view (gán về phím gần nhất) — dưới view là vùng gesture/nav
+     *  của hệ thống, chạm vào đó bàn phím bị ẩn (1.3.1). */
+    private val padBottomV = 14f * density
     private val corner = 7f * density
     private val shadowPx = 1.2f * density
     private val swipeStartPx = 22 * density // vuốt space: phải vượt ngưỡng này mới dời con trỏ
@@ -434,7 +438,7 @@ class KeyboardView(context: Context) : View(context) {
 
     override fun onMeasure(wm: Int, hm: Int) {
         val w = MeasureSpec.getSize(wm)
-        setMeasuredDimension(w, (rowsHeight + 2 * padV).toInt())
+        setMeasuredDimension(w, (rowsHeight + padV + padBottomV).toInt())
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
@@ -507,7 +511,7 @@ class KeyboardView(context: Context) : View(context) {
         for (a in areas) {
             if (a.scroll) continue
             if (a.hit.top < padV + marginV) a.hit.top = 0f
-            if (a.hit.bottom > height - padV - marginV) a.hit.bottom = height.toFloat()
+            if (a.hit.bottom > height - padBottomV - marginV) a.hit.bottom = height.toFloat()
         }
     }
 

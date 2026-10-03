@@ -75,8 +75,11 @@ object ViSyllable {
         return false
     }
 
-    /** Kết quả transform không phải âm tiết VN hợp lệ -> chốt bằng phím thô
-     *  ("text/expect/window" về nguyên gõ — 1.3). */
+    /** Transform chèn glyph VN vào kết quả không phải âm tiết hợp lệ -> chốt
+     *  bằng phím thô ("text/expect/window" về nguyên gõ — 1.3). 1.3.1: chỉ
+     *  restore khi xuất hiện ký tự VN — transform chỉ gộp phím lặp ra ASCII
+     *  sạch ("tesst"->"test") thì chốt đúng như hiển thị, không lộ phím thô. */
     fun restorable(raw: String, transformed: String): Boolean =
-        transformed != raw && !isValid(transformed.lowercase())
+        transformed != raw && !isValid(transformed.lowercase()) &&
+            transformed.any { it.code > 127 }
 }

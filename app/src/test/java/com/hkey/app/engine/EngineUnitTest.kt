@@ -128,6 +128,13 @@ class EngineUnitTest {
         assertFalse(ViSyllable.restorable("duoc", "duọc"))
         assertFalse(ViSyllable.restorable("nay", "nay"))
         assertFalse(ViSyllable.restorable("DUOCJ", "DUỌC"))
+        // 1.3.1: transform chỉ gộp phím lặp ra ASCII sạch -> chốt đúng như
+        // hiển thị, không restore raw chứa phím Telex dư ("tesst" -> "test")
+        assertFalse(ViSyllable.restorable("tesst", "test"))
+        assertFalse(ViSyllable.restorable("bass", "bas"))
+        assertFalse(ViSyllable.restorable("tessst", "tesst"))
+        assertEquals("test", TelexEngine().transform("tesst"))
+        assertEquals("tét", TelexEngine().transform("test"))
     }
 
     @Test

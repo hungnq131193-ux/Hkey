@@ -50,7 +50,8 @@ android {
             isMinifyEnabled = false
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true   // 5.x: R8
+            isShrinkResources = true // 5.x: bỏ resource không dùng
             // 1.9: thiếu cấu hình ký -> KHÔNG rơi về debug key (APK release ký
             // debug không update đè được bản đã cài); assembleRelease fail rõ.
             if (hpreSigningReady) signingConfig = signingConfigs.getByName("release")

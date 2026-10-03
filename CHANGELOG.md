@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.3 (versionCode 18)
+
+**Ảnh mô tả & xem trước giao diện trực quan**
+- Danh sách chọn giao diện: mỗi theme đều có ảnh thumbnail mô tả màu sắc
+  (nền gradient/đơn, phím mẫu, nút Enter accent; theme theo hệ thống chia
+  đôi sáng/tối) giúp người dùng dễ dàng nhận biết diện mạo từng giao diện.
+- Khung xem trước bàn phím (ThemePreviewView): hiển thị trực tiếp ảnh mô
+  tả bàn phím thu nhỏ với đầy đủ thanh gợi ý, các hàng phím, màu nền,
+  đổ bóng, viền phím và bo góc động theo kiểu phím đã chọn.
+- Cập nhật thời gian thực khi đổi giao diện hoặc kiểu bo góc phím trong Cài đặt.
+
 ## 1.3.2 (versionCode 17)
 
 **12 giao diện bàn phím + kiểu bo góc**

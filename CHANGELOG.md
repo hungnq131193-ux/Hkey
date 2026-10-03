@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.3.4 (versionCode 19)
+
+**Chữ tiếng Anh không còn bị biến dạng mà không hoàn nguyên**
+- ViSyllable.isValid giờ so đúng dấu phụ đã gõ (ă/â/ê/ô/ơ/ư): "new"→"neư",
+  "view"→"vieư", "news"→"neứ", "power"→"pởe", "tower"→"tởe", "law"→"lă",
+  "saw"→"să" đều hiện candidate hoàn nguyên để chọn lại chữ gốc.
+  Từ điển chỉ mất 4 mục rác (nêông, nôen, â, ă).
+- Gõ lười "duocj"→"duọc" giữ nguyên; âm tiết mơ hồ hợp lệ (hơ) vẫn ăn dấu.
+
+**Phím w áp lên từ đã gõ an toàn hơn**
+- Xoá lùi "show" thành "sho" rồi bấm w trước đây kẹt thành "shơ"; giờ chỉ
+  áp khi kết quả là âm tiết Việt hợp lệ, còn lại commit nguyên phím thô.
+
+**Gõ nhanh sau dấu cách không mất từ đang gõ**
+- Bàn phím theo dõi vị trí con trỏ dự kiến (kiểu AOSP): update con trỏ đến
+  trễ từ lần commit trước không còn bị nhận nhầm là người dùng dời con trỏ
+  → không chốt/xoá buffer giữa chừng (gõ nhanh "d"+"d" vẫn ra "đ").
+- Mọi commit/composing/xoá lùi đều ghi vị trí dự kiến; edit không đoán
+  được (phím cứng, action app) đánh dấu "không biết" thay vì đoán sai.
+- Ít gọi getTextBeforeCursor hơn trong một số đường gõ.
+
+**Lưu dữ liệu học không hơi giật khi ẩn bàn phím**
+- Sắp xếp tới 20 nghìn cạnh bigram/trigram chuyển sang luồng nền.
+
 ## 1.3.3 (versionCode 18)
 
 **Ảnh mô tả & xem trước giao diện trực quan**

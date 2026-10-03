@@ -63,9 +63,18 @@ jobs:
           name: HKey-APKs
           path: app/build/outputs/apk/**/*.apk
 
+      # 1.1.1: Release chỉ đính APK release đổi tên theo tag (không đính APK
+      # debug); ghi chú lấy mục mới nhất của CHANGELOG.md
+      - name: Prepare release asset + notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk "HKey-${GITHUB_REF_NAME#v}.apk"
+          awk '/^## /{c++} c==2{exit} c>=1' CHANGELOG.md > release-notes.md
+          cat release-notes.md
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/**/*.apk
-          generate_release_notes: true
+          files: HKey-*.apk
+          body_path: release-notes.md

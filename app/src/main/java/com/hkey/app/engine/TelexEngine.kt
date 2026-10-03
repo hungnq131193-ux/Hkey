@@ -10,6 +10,7 @@ package com.hkey.app.engine
  * (ă â ê ô ơ ư) -> trên nó; cụm 2 nguyên âm kèm phụ âm cuối -> nguyên âm 2
  * ("hoàn"); cụm mở oa/oe/uy -> nguyên âm 2 ("hoà", "khoẻ", "thuỷ"); cụm mở
  * khác -> nguyên âm 1 ("của", "tái"); cụm 3 nguyên âm -> giữa ("xoài").
+ * Kiểu hoa giữ theo từng ký tự: "USA" -> "USA", "iPhone" -> "iPhone" (1.2).
  */
 class TelexEngine {
 
@@ -50,64 +51,107 @@ class TelexEngine {
         put('đ', 'đ' to 0)
     }
 
-    private fun decomposed(c: Char) = decompose[c] ?: (c to 0)
+    private fun decomposed(c: Char): Pair<Char, Int> =
+        decompose[c] ?: c.lowercaseChar().let { decompose[it] ?: (c to 0) }
 
-    /** Bỏ dấu thanh, giữ dấu phụ: "hoán" -> "hoan", "tiện" -> "tiên". */
+    /** Bỏ dấu thanh, giữ dấu phụ và kiểu hoa: "HoÁn" -> "HoAn". */
     fun stripTones(s: String): String {
         val sb = StringBuilder(s.length)
-        for (c in s) sb.append(decomposed(c).first)
+        for (c in s) {
+            val base = decomposed(c).first
+            sb.append(if (c.isUpperCase()) base.uppercaseChar() else base)
+        }
         return sb.toString()
     }
 
     /**
      * Bẻ dấu 'w' lên từ đã có dấu/chữ (bỏ dấu từ xa, hoặc 'w' gõ sau phụ âm
-     * cuối): "uo" không sau q -> "ươ"; nguyên âm cuối a/o/u -> ă/ơ/ư, giữ tone.
+     * cuối): "uo" không sau q -> "ươ"; nguyên âm cuối a/o/u -> ă/ơ/ư, giữ tone
+     * và kiểu hoa của ký tự bị đổi (1.2).
      */
     fun applyW(word: String): String? {
         for (i in word.length - 2 downTo 0) {
             if (decomposed(word[i]).first == 'u' && decomposed(word[i + 1]).first == 'o' &&
-                !(i > 0 && word[i - 1] == 'q')
+                !(i > 0 && word[i - 1].lowercaseChar() == 'q')
             ) {
                 val u = vowelBase.getValue('ư')[decomposed(word[i]).second]
                 val o = vowelBase.getValue('ơ')[decomposed(word[i + 1]).second]
-                return word.substring(0, i) + u + o + word.substring(i + 2)
+                return word.substring(0, i) +
+                    (if (word[i].isUpperCase()) u.uppercase() else u) +
+                    (if (word[i + 1].isUpperCase()) o.uppercase() else o) +
+                    word.substring(i + 2)
             }
         }
         for (i in word.length - 1 downTo 0) {
             val target = when (decomposed(word[i]).first) {
                 'a' -> 'ă'; 'o' -> 'ơ'; 'u' -> 'ư'; else -> null
             } ?: continue
+            val v = vowelBase.getValue(target)[decomposed(word[i]).second]
             return word.substring(0, i) +
-                vowelBase.getValue(target)[decomposed(word[i]).second] +
+                (if (word[i].isUpperCase()) v.uppercase() else v) +
                 word.substring(i + 1)
         }
         return null
     }
 
-    /** "uow" -> "ươ" phải chạy trước rule "ow"/"uw"; 'u' sau 'q' là phụ âm. */
-    private fun replaceUow(text: String): String {
+    /** "uow" -> "ươ" phải chạy trước rule "ow"/"uw"; 'u' sau 'q' là phụ âm.
+     *  Mask: ư lấy hoa của 'u', ơ lấy hoa của 'o'/'w' (1.2). */
+    private fun replaceUow(text: String, up: BooleanArray): Pair<String, BooleanArray> {
         var t = text
+        var u = up
         var i = t.indexOf("uow")
         while (i >= 0) {
             if (i > 0 && t[i - 1] == 'q') {
                 i = t.indexOf("uow", i + 1)
             } else {
                 t = t.substring(0, i) + "ươ" + t.substring(i + 3)
+                u = BooleanArray(t.length) { j ->
+                    when {
+                        j < i -> u[j]
+                        j == i -> u[i]
+                        j == i + 1 -> u[i + 1] || u[i + 2]
+                        else -> u[j + 1]
+                    }
+                }
                 i = t.indexOf("uow", i + 2)
             }
         }
-        return t
+        return t to u
+    }
+
+    /** Thay mọi `from` thành `to`; ký tự gộp lấy hoa nếu một ký tự nguồn hoa
+     *  ("Aa" -> "Â", "Dd" -> "Đ"). Chỉ dùng với `to` một ký tự (1.2). */
+    private fun replaceMasked(
+        text: String, up: BooleanArray, from: String, to: String
+    ): Pair<String, BooleanArray> {
+        var t = text
+        var u = up
+        var i = t.indexOf(from)
+        while (i >= 0) {
+            val m = (i until i + from.length).any { u[it] }
+            t = t.substring(0, i) + to + t.substring(i + from.length)
+            u = BooleanArray(t.length) { j ->
+                when {
+                    j < i -> u[j]
+                    j == i -> m
+                    else -> u[j - 1 + from.length]
+                }
+            }
+            i = t.indexOf(from, i + 1)
+        }
+        return t to u
     }
 
     fun transform(input: String): String {
         if (input.isEmpty()) return ""
-        val isFirstUpper = input.first().isUpperCase()
         var text = input.lowercase()
+        var up = BooleanArray(input.length) { input[it].isUpperCase() }
 
         // 'z' sau phím dấu = phím dấu đó in thành chữ thường ("hoasz" -> "hoas").
         // Viết hoa tạm để vòng quét dấu bên dưới bỏ qua nó, hạ lại ở cuối.
         if (text.last() == 'z' && text.length >= 2 && toneMap.containsKey(text[text.length - 2])) {
             text = text.dropLast(1)
+            up = up.copyOf(text.length)
             text = text.substring(0, text.length - 1) + text.last().uppercaseChar()
         }
 
@@ -117,26 +161,57 @@ class TelexEngine {
         if ((1 until text.length).any { isToneCommand(text, it) }) {
             toneIdx = toneMap.getValue(text[(text.length - 1 downTo 1).first { isToneCommand(text, it) }])
             val sb = StringBuilder(text.length)
+            val nup = BooleanArray(text.length)
+            var n = 0
             for (i in text.indices) {
-                if (!isToneCommand(text, i)) sb.append(text[i])
+                if (!isToneCommand(text, i)) {
+                    sb.append(text[i])
+                    nup[n++] = up[i]
+                }
             }
             text = sb.toString()
+            up = nup.copyOf(n)
         }
 
         text = text.lowercase() // hạ lại ký tự đã escape bằng 'z'
 
         // Cặp đúp phím dấu còn lại = chữ thật ("bass" -> "bas")
-        text = collapseDoubledToneKeys(text)
+        run {
+            val sb = StringBuilder(text.length)
+            val nup = BooleanArray(text.length)
+            var n = 0
+            var i = 0
+            while (i < text.length) {
+                sb.append(text[i])
+                nup[n] = up[i]
+                if (toneMap.containsKey(text[i]) && i + 1 < text.length &&
+                    text[i + 1] == text[i]
+                ) {
+                    nup[n] = nup[n] || up[i + 1]
+                    i++
+                }
+                n++; i++
+            }
+            text = sb.toString()
+            up = nup.copyOf(n)
+        }
 
-        text = text.replace("dd", "đ")
-        text = text.replace("aa", "â").replace("ee", "ê").replace("oo", "ô")
-        text = replaceUow(text)
-        text = text.replace("aw", "ă").replace("ow", "ơ").replace("uw", "ư")
+        replaceMasked(text, up, "dd", "đ").let { text = it.first; up = it.second }
+        replaceMasked(text, up, "aa", "â").let { text = it.first; up = it.second }
+        replaceMasked(text, up, "ee", "ê").let { text = it.first; up = it.second }
+        replaceMasked(text, up, "oo", "ô").let { text = it.first; up = it.second }
+        replaceUow(text, up).let { text = it.first; up = it.second }
+        replaceMasked(text, up, "aw", "ă").let { text = it.first; up = it.second }
+        replaceMasked(text, up, "ow", "ơ").let { text = it.first; up = it.second }
+        replaceMasked(text, up, "uw", "ư").let { text = it.first; up = it.second }
         // 'w' cuối sau phụ âm -> bẻ dấu nguyên âm trước nó ("honw" -> "hơn")
         if (text.endsWith("w")) {
-            applyW(text.dropLast(1))?.let { text = it }
+            applyW(text.dropLast(1))?.let {
+                text = it
+                up = up.copyOf(text.length)
+            }
         }
-        text = text.replace("w", "ư")
+        replaceMasked(text, up, "w", "ư").let { text = it.first; up = it.second }
 
         if (toneIdx > 0) {
             val i = toneTargetIndex(text)
@@ -147,11 +222,12 @@ class TelexEngine {
             }
         }
 
-        return if (isFirstUpper && text.isNotEmpty()) {
-            text.replaceFirstChar { it.uppercase() }
-        } else {
-            text
+        if (!up.any { it }) return text
+        val sb = StringBuilder(text)
+        for (i in text.indices) {
+            if (i < up.size && up[i]) sb.setCharAt(i, text[i].uppercaseChar())
         }
+        return sb.toString()
     }
 
     private fun isVowelChar(c: Char) = c in plainVowels || c in markedVowels || c == 'w'
@@ -169,17 +245,6 @@ class TelexEngine {
         if (text[i - 1] == c || (i + 1 < text.length && text[i + 1] == c)) return false
         if (!vowelBefore(text, i)) return false
         return i + 1 == text.length || !isVowelChar(text[i + 1])
-    }
-
-    private fun collapseDoubledToneKeys(text: String): String {
-        val sb = StringBuilder(text.length)
-        var i = 0
-        while (i < text.length) {
-            sb.append(text[i])
-            if (toneMap.containsKey(text[i]) && i + 1 < text.length && text[i + 1] == text[i]) i++
-            i++
-        }
-        return sb.toString()
     }
 
     /** 'u' sau 'q' và 'i' sau 'g' trước nguyên âm là phụ âm (qu-, gi-), không phải nguyên âm. */

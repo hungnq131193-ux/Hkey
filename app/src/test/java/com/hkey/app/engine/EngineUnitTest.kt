@@ -41,6 +41,38 @@ class EngineUnitTest {
     }
 
     @Test
+    fun testUppercaseMask() {
+        val telex = TelexEngine()
+        // 1.2: giữ kiểu hoa theo từng ký tự — không còn về dạng "Usa"
+        assertEquals("USA", telex.transform("USA"))
+        assertEquals("VN", telex.transform("VN"))
+        assertEquals("iPhone", telex.transform("iPhone"))
+        assertEquals("ĐƯỢC", telex.transform("ĐƯỢC"))
+        assertEquals("VIỆT", telex.transform("VIEETJ"))
+        assertEquals("HOÀ", telex.transform("HOAF"))
+        assertEquals("Hoà", telex.transform("Hoaf"))
+        assertEquals("Ân", telex.transform("Aan"))
+        // Phím dấu hoa (SHIFT+S) vẫn ăn thành dấu sắc
+        assertEquals("Hoá", telex.transform("HoaS"))
+        // Gõ đúp phím dấu hoa vẫn in chữ thật, giữ hoa
+        assertEquals("BAS", telex.transform("BASS"))
+        // 'z' huỷ dấu trên từ hoa
+        assertEquals("HOAS", telex.transform("HOASZ"))
+    }
+
+    @Test
+    fun testRetroMarkKeepsCase() {
+        val telex = TelexEngine()
+        // 1.2: applyW/stripTones trên từ đã commit giữ hoa nguyên âm bị đổi
+        assertEquals("HƠN", telex.applyW("HON"))
+        assertEquals("Hơn", telex.applyW("Hon"))
+        assertEquals("HƠn", telex.applyW("HOn"))
+        assertEquals("CƯƠI", telex.applyW("CUOI"))
+        assertEquals("HOAN", telex.stripTones("HOÁN"))
+        assertEquals("Hoan", telex.stripTones("Hoán"))
+    }
+
+    @Test
     fun testTonePlacementModern() {
         val telex = TelexEngine()
         // 2 nguyên âm + phụ âm cuối -> dấu ở nguyên âm 2

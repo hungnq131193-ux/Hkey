@@ -95,4 +95,16 @@ class TextContextTest {
         assertFalse(TextContext.gluedToken(""))
         assertFalse(TextContext.gluedToken(null))
     }
+
+    @Test
+    fun matchCaseAppliesTypedStyle() {
+        // 1.2: bản sửa/gợi ý giữ kiểu hoa của từ đã gõ
+        assertEquals("Nói", TextContext.matchCase("Noi", "nói"))
+        assertEquals("HOÀN", TextContext.matchCase("HOAN", "hoàn"))
+        assertEquals("hoàn", TextContext.matchCase("hoan", "hoàn"))
+        // Chữ đầu thường -> giữ nguyên bản đề nghị
+        assertEquals("nói", TextContext.matchCase("iPhone", "nói"))
+        assertEquals("Anh", TextContext.matchCase("A", "anh"))
+        assertEquals("", TextContext.matchCase("X", ""))
+    }
 }

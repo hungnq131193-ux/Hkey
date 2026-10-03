@@ -521,6 +521,8 @@ class HKeyIME : InputMethodService() {
         // 1.1: mảng trong url/email/ip ("io" trong "hu.io.vn") không sửa, không học.
         val fixed = if (isProperNoun || tokenGlued) null
             else predictor.correction(typed, prev, prev2)
+            // 1.2: bản sửa trả chữ thường — áp lại kiểu hoa của từ đã gõ
+            ?.let { TextContext.matchCase(typed, it) }
         val word = fixed ?: typed
         currentInputConnection?.commitText(word, 1)
         if (!tokenGlued) {
@@ -642,12 +644,26 @@ class HKeyIME : InputMethodService() {
         if (word.isEmpty()) return
         lastAutoFix = null
         val prev = contextWordBeforeCursor()
+        // 1.2: gợi ý trả chữ thường — áp lại kiểu hoa đang gõ / shift đầu câu
+        val cased = when {
+            currentComposingWord.isNotEmpty() ->
+                TextContext.matchCase(
+                    telexEngine.transform(currentComposingWord.toString()), word
+                )
+            shiftOn -> word.replaceFirstChar { it.uppercase() }
+            else -> word
+        }
         // commitText tự thay thế vùng composing nếu đang gõ dở
-        currentInputConnection?.commitText("$word ", 1)
+        currentInputConnection?.commitText("$cased ", 1)
         predictor.recordSequence(prev, word)
         markLearnedDirty()
-        lastCommittedWord = word
+        lastCommittedWord = cased
         currentComposingWord.clear()
+        if (shiftOn) {
+            shiftOn = false
+            shiftAuto = false
+            updateShiftUI()
+        }
         contextCache = null
         updateSuggestions()
         updateAutoShift()
@@ -671,9 +687,12 @@ class HKeyIME : InputMethodService() {
             // 3.4: chỉ đề nghị sửa khi từ đang gõ không phải tiền tố hợp lệ
             val fix = if (tokenGlued || predictor.isPrefixOfKnownWord(current)) null
                 else predictor.correction(current, ctx, ctx2)
-            candidate1?.text = completions.getOrNull(0) ?: ""
-            candidate2?.text = fix ?: current
-            candidate3?.text = completions.getOrNull(1) ?: ""
+            // 1.2: hiện gợi ý đúng kiểu hoa để chạm vào ăn ngay
+            candidate1?.text = completions.getOrNull(0)
+                ?.let { TextContext.matchCase(current, it) } ?: ""
+            candidate2?.text = fix?.let { TextContext.matchCase(current, it) } ?: current
+            candidate3?.text = completions.getOrNull(1)
+                ?.let { TextContext.matchCase(current, it) } ?: ""
         } else {
             // Từ vừa bị auto-correct: ô giữa hiện đúng từ user đã gõ,
             // chạm vào để khôi phục (hoặc bấm ⌫).
@@ -691,8 +710,10 @@ class HKeyIME : InputMethodService() {
                 candidate3?.text = ""
                 return
             }
-            // Đã chốt từ: gợi ý từ tiếp theo theo ngữ cảnh 2 từ (3.3)
+            // Đã chốt từ: gợi ý từ tiếp theo theo ngữ cảnh 2 từ (3.3);
+            // shift đang bật (đầu câu) thì hiện hoa luôn (1.2)
             val next = predictor.predictNext(ctx, ctx2)
+                .map { if (shiftOn) it.replaceFirstChar(Char::uppercase) else it }
             candidate1?.text = next.getOrNull(1) ?: ""
             candidate2?.text = next.getOrNull(0) ?: ""
             candidate3?.text = next.getOrNull(2) ?: ""

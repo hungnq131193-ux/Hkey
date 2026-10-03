@@ -77,4 +77,14 @@ object TextContext {
      *  tức từ đang gõ nằm trong url/email/ip/giờ (1.1). */
     fun gluedToken(before: CharSequence?): Boolean =
         before != null && before.isNotEmpty() && before.last() in tokenGlue
+
+    /** Áp kiểu hoa của từ đã gõ lên từ đề nghị/sửa (1.2): ALL-CAPS -> hoa hết,
+     *  "Hoa đầu" -> hoa đầu, chữ đầu thường -> giữ nguyên bản đề nghị. */
+    fun matchCase(typed: String, word: String): String = when {
+        word.isEmpty() || typed.isEmpty() -> word
+        typed.length > 1 && typed.any { it.isLetter() } &&
+            typed.all { !it.isLetter() || it.isUpperCase() } -> word.uppercase()
+        typed.first().isUpperCase() -> word.replaceFirstChar { it.uppercase() }
+        else -> word
+    }
 }

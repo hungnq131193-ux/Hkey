@@ -1,6 +1,7 @@
 package com.hkey.app.ui
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
@@ -309,6 +310,9 @@ class KeyboardView(context: Context) : View(context) {
     private val shadowPx = 1.2f * density
     private val swipeStartPx = 22 * density // vuốt space: phải vượt ngưỡng này mới dời con trỏ
     private val swipeStepPx = 12 * density  // mỗi nấc tiếp theo = 1 ký tự
+    /** 1.3: bề rộng tối đa vùng phím — tablet/màn gập không bị kéo dãn
+     *  full-width (phím khổng lồ), vùng phím canh giữa. */
+    private val maxContentPx = 600 * density
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val minFling = ViewConfiguration.get(context).scaledMinimumFlingVelocity.toFloat()
     private val lpMs = 360L
@@ -412,10 +416,21 @@ class KeyboardView(context: Context) : View(context) {
         showPage(page)
     }
 
+    /** 1.3: chiều cao hàng hiệu lực — landscape thấp lại x0.8 để bàn phím
+     *  không chiếm gần nửa màn hình ngang. */
+    private val rowH: Float
+        get() = keyHeightPx * (
+            if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
+                0.8f else 1f
+            )
+
+    /** Lề ngang hiệu lực: max(kb_side của user, lề căn giữa trên màn rộng). */
+    private fun effSidePx(w: Float) = max(sidePx.toFloat(), (w - maxContentPx) / 2f)
+
     /** Tổng chiều cao vùng phím: cố định theo số hàng trang chữ — mọi trang
      *  (ký hiệu, emoji) cùng cao, đổi trang không làm app nhảy layout. */
     private val rowsHeight: Float
-        get() = (if (numberRow) 5 else 4) * keyHeightPx.toFloat()
+        get() = (if (numberRow) 5 else 4) * rowH
 
     override fun onMeasure(wm: Int, hm: Int) {
         val w = MeasureSpec.getSize(wm)
@@ -433,8 +448,9 @@ class KeyboardView(context: Context) : View(context) {
     private fun layoutRow(row: KbRow, y: Float, rh: Float) {
         val w = width.toFloat()
         val sumW = row.keys.sumOf { it.w.toDouble() }.toFloat() + 2 * row.indent
-        val unit = (w - 2 * sidePx) / sumW
-        var x = sidePx + row.indent * unit
+        val es = effSidePx(w)
+        val unit = (w - 2 * es) / sumW
+        var x = es + row.indent * unit
         row.keys.forEachIndexed { i, k ->
             val cellL = if (i == 0 && row.indent == 0f) 0f else x
             val cw = k.w * unit
@@ -454,16 +470,17 @@ class KeyboardView(context: Context) : View(context) {
         if (width == 0) return
         val total = rowsHeight
         if (page == Page.EMOJI) {
-            val tabH = keyHeightPx.toFloat()
+            val tabH = rowH
             gridTop = padV
             gridBottom = padV + total - tabH
-            val gridRowH = keyHeightPx * 0.92f
-            val unit = (width - 2f * sidePx) / KbLayouts.EMOJI_COLS
+            val gridRowH = rowH * 0.92f
+            val es = effSidePx(width.toFloat())
+            val unit = (width - 2f * es) / KbLayouts.EMOJI_COLS
             val gridRows = rows.dropLast(1)
             gridRows.forEachIndexed { r, row ->
                 val y = gridTop + r * gridRowH
                 row.keys.forEachIndexed { i, k ->
-                    val x = sidePx + i * unit
+                    val x = es + i * unit
                     areas += Area(
                         k,
                         RectF(x + marginH, y + marginV / 2, x + unit - marginH, y + gridRowH - marginV / 2),
@@ -779,7 +796,7 @@ class KeyboardView(context: Context) : View(context) {
     private fun drawPreview(c: Canvas) {
         val a = previewArea ?: return
         val pw = max(a.draw.width() * 1.3f, 46 * density)
-        val ph = min(keyHeightPx * 1.25f, 66 * density)
+        val ph = min(rowH * 1.25f, 66 * density)
         val cx = a.draw.centerX().coerceIn(pw / 2, max(pw / 2, width - pw / 2))
         val top = (a.draw.top - ph - 6 * density).coerceAtLeast(-topRoomPx.toFloat())
         tmpRect.set(cx - pw / 2, top + shadowPx * 1.5f, cx + pw / 2, top + ph + shadowPx * 1.5f)

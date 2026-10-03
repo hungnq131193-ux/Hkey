@@ -32,6 +32,17 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
+      # 1.9: fail rõ khi thiếu secret — không để release lọt ra ký debug key
+      - name: Verify signing secrets
+        env:
+          KS_B64: ${{ secrets.HKEY_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.HKEY_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ]; then
+            echo "::error::Thiếu secret ký release (HKEY_KEYSTORE_B64/HKEY_KEYSTORE_PASSWORD)"
+            exit 1
+          fi
+
       - name: Decode release keystore
         run: echo "${{ secrets.HKEY_KEYSTORE_B64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
 

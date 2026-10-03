@@ -51,11 +51,9 @@ android {
         }
         release {
             isMinifyEnabled = false
-            signingConfig = if (hpreSigningReady) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            // 1.9: thiếu cấu hình ký -> KHÔNG rơi về debug key (APK release ký
+            // debug không update đè được bản đã cài); assembleRelease fail rõ.
+            if (hpreSigningReady) signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -65,6 +63,21 @@ android {
     buildFeatures {
         buildConfig = true // chỉ phục vụ log đo thời gian ở bản debug
     }
+    if (!hpreSigningReady) {
+        tasks.register("requireReleaseSigning") {
+            doLast {
+                throw GradleException(
+                    "Release cần khóa ký thật: đặt hpreSigning.storeFile/storePassword/" +
+                        "keyAlias/keyPassword trong ~/.gradle/gradle.properties hoặc env " +
+                        "HPRE_SIGNING_*. Không build APK release bằng debug key."
+                )
+            }
+        }
+        // assembleRelease do AGP tạo sau -> matching/configureEach, không named()
+        tasks.matching { it.name == "assembleRelease" }
+            .configureEach { dependsOn("requireReleaseSigning") }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

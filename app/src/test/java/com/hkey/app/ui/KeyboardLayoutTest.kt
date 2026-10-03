@@ -57,6 +57,10 @@ class KeyboardLayoutTest {
         assertTrue(emoKeys.any { it.tag == "fn:abc" })
         // mọi tx: phải có label (ký tự emoji)
         assertTrue(emoKeys.filter { it.tag.startsWith("tx:") }.all { it.label != null })
+        // không xẻ đôi surrogate pair: mỗi label = đúng 1 code point
+        assertTrue(emoKeys.filter { it.tag.startsWith("tx:") }.all {
+            it.label!!.codePointCount(0, it.label!!.length) == 1
+        })
     }
 
     @Test

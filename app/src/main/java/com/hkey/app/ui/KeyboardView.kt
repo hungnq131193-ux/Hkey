@@ -93,11 +93,18 @@ object KbLayouts {
     )
 
     private val EMOJI =
-        "😀😁😂🤣😊😍😘😎😢😭😡😴🤔🙄😇🤗👍👎👏🙏💪🤝✌🤞❤💔💯🔥✨🎉🎂⚡"
+        "😀😁😂🤣😃😄😅😆😉😊😋😎😍😘🥰😗😙😚🙂🤗🤔😐😑😶🙄😏😣😥😮🤐😯😪" +
+        "😫😴😌😛😜😝🤤😒😓😔😕🙃🤑😲🙁😖😞😟😤😢😭😦😧😨😩🤯😬😰😱🥵🥶" +
+        "😳🤪😵😡😠🤬😷🤒🤕🤢🤮🥴😇🥳🥺🤠🤡🤥🤫🤭🧐🤓😈👿👍👎👏🙏" +
+        "💪🤝✌🤞👌🤟🤘👋🤚🖐✋🖖👆👇☝✍💅🙌👐🤲💃🕺🏃🚶👶👧👦👩" +
+        "👨👵👴❤🧡💛💚💙💜🖤🤍🤎💔❣💕💞💓💗💖💘💝💯🔥✨🎉🎂🎁🎄⚡⭐"
 
     fun emoji(): List<KbRow> {
-        val rows = EMOJI.chunked(8).map { line ->
-            KbRow(line.map { KbKey("tx:$it", it.toString()) })
+        // Emoji astral = 2 UTF-16 unit — phải tách theo code point, không
+        // chunk theo Char kẻo xẻ đôi surrogate pair.
+        val glyphs = EMOJI.codePoints().toArray().map { String(Character.toChars(it)) }
+        val rows = glyphs.chunked(8).map { line ->
+            KbRow(line.map { KbKey("tx:$it", it) })
         }
         return rows + KbRow(
             listOf(
@@ -112,18 +119,21 @@ object KbLayouts {
 
 class KbPalette(
     val key: Int, val keyPressed: Int, val func: Int, val funcPressed: Int,
-    val text: Int, val dim: Int, val accent: Int, val popupBg: Int
+    val text: Int, val dim: Int, val accent: Int, val popupBg: Int,
+    val bg: Int, val bar: Int, val divider: Int
 ) {
     companion object {
         val DARK = KbPalette(
             0xFF3D4149.toInt(), 0xFF5A626E.toInt(), 0xFF2B2E34.toInt(),
             0xFF49505A.toInt(), 0xFFE8EAED.toInt(), 0xFF9AA0A6.toInt(),
-            0xFF8AB4F8.toInt(), 0xFF454A52.toInt()
+            0xFF8AB4F8.toInt(), 0xFF454A52.toInt(),
+            0xFF191B1F.toInt(), 0xFF22252A.toInt(), 0xFF3C4043.toInt()
         )
         val LIGHT = KbPalette(
             0xFFFFFFFF.toInt(), 0xFFD2D7DB.toInt(), 0xFFC4C9CD.toInt(),
             0xFFA9B0B6.toInt(), 0xFF1F1F1F.toInt(), 0xFF5F6368.toInt(),
-            0xFF1A73E8.toInt(), 0xFFFFFFFF.toInt()
+            0xFF1A73E8.toInt(), 0xFFFFFFFF.toInt(),
+            0xFFE9EDF0.toInt(), 0xFFFFFFFF.toInt(), 0xFFD8DBDF.toInt()
         )
     }
 }

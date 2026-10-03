@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/kb_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@color/kb_background"
@@ -7,6 +8,7 @@
     android:paddingTop="4dp">
 
     <LinearLayout
+        android:id="@+id/cand_bar"
         android:layout_width="match_parent"
         android:layout_height="44dp"
         android:background="@color/kb_candidate_bar"
@@ -22,6 +24,7 @@
             android:textSize="16sp" />
 
         <View
+            android:id="@+id/cand_div1"
             android:layout_width="1dp"
             android:layout_height="24dp"
             android:layout_gravity="center_vertical"
@@ -38,6 +41,7 @@
             android:textStyle="bold" />
 
         <View
+            android:id="@+id/cand_div2"
             android:layout_width="1dp"
             android:layout_height="24dp"
             android:layout_gravity="center_vertical"

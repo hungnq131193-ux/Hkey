@@ -356,6 +356,16 @@ class HKeyIME : InputMethodService() {
         kbView = kb
         root.findViewById<FrameLayout>(R.id.kb_pages).addView(kb)
 
+        // 3.x: thanh candidate + nền theo cùng palette với phím (sáng/tối)
+        val p = kb.palette
+        root.findViewById<View>(R.id.kb_root).setBackgroundColor(p.bg)
+        root.findViewById<View>(R.id.cand_bar).setBackgroundColor(p.bar)
+        root.findViewById<View>(R.id.cand_div1).setBackgroundColor(p.divider)
+        root.findViewById<View>(R.id.cand_div2).setBackgroundColor(p.divider)
+        candidate1?.setTextColor(p.text)
+        candidate2?.setTextColor(p.accent)
+        candidate3?.setTextColor(p.text)
+
         updateSuggestions()
         inputView = root
         return root

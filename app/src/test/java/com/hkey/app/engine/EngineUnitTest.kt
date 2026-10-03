@@ -106,6 +106,18 @@ class EngineUnitTest {
     }
 
     @Test
+    fun testDeleteDisplayChar() {
+        val telex = TelexEngine()
+        // 1.7: ⌫ xóa ký tự hiển thị — xóa 't' của "việt" phải giữ tone -> "việ"
+        assertEquals("vieej", telex.dropLastDisplayChar("vieetj"))
+        assertEquals("hoaf", telex.dropLastDisplayChar("hoanf")) // hoàn -> hoà
+        assertEquals("", telex.dropLastDisplayChar("dd")) // đ -> xóa hết
+        assertEquals("a", telex.dropLastDisplayChar("aaa")) // aa -> a
+        assertEquals("a", telex.dropLastDisplayChar("ass")) // as -> a
+        assertEquals("a", telex.dropLastDisplayChar("add")) // ađ -> a
+    }
+
+    @Test
     fun testAutoRestoreRaw() {
         // 1.3: kết quả không phải âm tiết VN -> chốt bằng phím thô
         assertTrue(ViSyllable.restorable("text", "tẽt"))

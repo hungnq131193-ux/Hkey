@@ -58,6 +58,7 @@ class HKeyIME : InputMethodService() {
     private var optVibrate = true
     private var contextCache: Pair<String, String>? = null // (từ trước, từ trước nữa)
     private var currentInputType = 0 // inputType của ô đang focus (cho getCursorCapsMode)
+    private var currentImeOptions = 0 // imeOptions ô đang focus (action Enter — 1.5)
     private var tokenGlued = false // từ đang gõ dính sau . @ / : — url/email/ip (1.1)
     private var rawMode = false // ô nhạy cảm: gõ thẳng, không Telex/gợi ý/học (B1,B2)
     private var noSuggest = false // NO_SUGGESTIONS: Telex vẫn gõ, tắt gợi ý+sửa (1.4)
@@ -163,6 +164,7 @@ class HKeyIME : InputMethodService() {
         noLearning = noSuggest ||
             info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
         currentInputType = info.inputType
+        currentImeOptions = info.imeOptions
         computeAutoCap(info)
         consumeLearningCleared() // tiêu thụ sớm ngay khi focus ô, không chờ view
     }
@@ -171,6 +173,7 @@ class HKeyIME : InputMethodService() {
         val t0 = if (BuildConfig.DEBUG) System.nanoTime() else 0L
         super.onStartInputView(info, restarting)
         currentInputType = info.inputType
+        currentImeOptions = info.imeOptions
         if (!restarting) {
             currentComposingWord.clear()
             lastCommittedWord = ""
@@ -226,14 +229,16 @@ class HKeyIME : InputMethodService() {
         super.onUpdateSelection(
             oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd
         )
-        if (currentComposingWord.isNotEmpty() &&
-            (newSelStart != newSelEnd || candidatesStart < 0 || newSelStart != candidatesEnd)
-        ) {
+        // 1.6: update do chính setComposingText của ta gây ra (con trỏ nằm đúng
+        // cuối vùng composing) -> ngữ cảnh trước từ không đổi, giữ cache.
+        val selfEdit = currentComposingWord.isNotEmpty() &&
+            newSelStart == newSelEnd && candidatesStart >= 0 && newSelStart == candidatesEnd
+        if (currentComposingWord.isNotEmpty() && !selfEdit) {
             currentInputConnection?.finishComposingText()
             currentComposingWord.clear()
             updateSuggestions()
         }
-        contextCache = null // con trỏ đổi chỗ -> ngữ cảnh cũ không còn tin được
+        if (!selfEdit) contextCache = null // con trỏ/ngữ cảnh đổi thật mới vô hiệu
         updateAutoShift()
     }
 
@@ -483,7 +488,10 @@ class HKeyIME : InputMethodService() {
                 if (it != word) return replaceAdjacentWord(word, it)
             }
         }
-        currentComposingWord.append(telexEngine.stripTones(word)).append(c)
+        // 1.8: giữ dấu sẵn có của từ cũ khi gõ tiếp; chỉ bóc tone khi phím
+        // mới chính là phím dấu (gõ 's' sau "việt" -> "viết" vẫn đè tone được).
+        val base = if (c[0].lowercaseChar() in "sfrxj") telexEngine.stripTones(word) else word
+        currentComposingWord.append(base).append(c)
         val transformed = telexEngine.transform(currentComposingWord.toString())
         contextCache = null // từ kề vừa vào buffer — ngữ cảnh phải dời lên trước nó
         val ic = currentInputConnection ?: return false
@@ -563,8 +571,11 @@ class HKeyIME : InputMethodService() {
             return
         }
         if (currentComposingWord.isNotEmpty()) {
-            currentComposingWord.deleteCharAt(currentComposingWord.length - 1)
-            val transformed = telexEngine.transform(currentComposingWord.toString())
+            // 1.7: xóa 1 ký tự HIỂN THỊ ("việt"⌫="việ"), không phải phím thô cuối
+            val r = telexEngine.dropLastDisplayChar(currentComposingWord.toString())
+            currentComposingWord.clear()
+            currentComposingWord.append(r)
+            val transformed = telexEngine.transform(r)
             if (transformed.isEmpty()) {
                 currentInputConnection?.commitText("", 1)
             } else {
@@ -635,9 +646,21 @@ class HKeyIME : InputMethodService() {
 
     private fun handleEnter() {
         commitComposing()
-        currentInputConnection?.sendKeyEvent(
-            KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)
-        )
+        val ic = currentInputConnection ?: return
+        // 1.5: ô một dòng đặt action (send/search/go/done) -> gọi action app,
+        // app không xử lý mới mô phỏng phím Enter (cả DOWN lẫn UP).
+        val action = currentImeOptions and EditorInfo.IME_MASK_ACTION
+        if (action != EditorInfo.IME_ACTION_NONE &&
+            action != EditorInfo.IME_ACTION_UNSPECIFIED &&
+            currentImeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION == 0 &&
+            ic.performEditorAction(action)
+        ) {
+            contextCache = null
+            updateAutoShift()
+            return
+        }
+        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
         contextCache = null
         updateAutoShift()
     }

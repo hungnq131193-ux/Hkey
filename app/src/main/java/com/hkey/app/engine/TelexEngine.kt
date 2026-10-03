@@ -285,6 +285,37 @@ class TelexEngine {
         return sb.toString()
     }
 
+    /** Ký tự gốc bỏ mọi dấu: 'ấ'->'a', 'đ'->'d' (so khớp khi xóa — 1.7). */
+    private fun bareChar(c: Char): Char = when (val b = decomposed(c).first) {
+        'ă', 'â' -> 'a'; 'ê' -> 'e'; 'ô', 'ơ' -> 'o'; 'ư' -> 'u'; 'đ' -> 'd'
+        else -> b
+    }
+
+    /** ⌫ xóa 1 ký tự HIỂN THỊ cuối (1.7): thử bỏ từng phím thô (thường nằm
+     *  giữa — "vieetj"->việt bỏ 't' -> "vieej"->việ, giữ tone); không khớp
+     *  thì cắt dần đuôi thô, chấp nhận kết quả không dài hơn phần còn lại,
+     *  đúng tiền tố hoặc chỉ khác ở dấu và không nhiều dấu hơn ("ass"->as:
+     *  ⌫ bỏ 's' -> "as"->á không chấp nhận, cắt tiếp -> "a"). */
+    fun dropLastDisplayChar(raw: String): String {
+        if (raw.isEmpty()) return raw
+        val target = transform(raw).dropLast(1)
+        for (i in raw.length - 1 downTo 0) {
+            val cand = raw.removeRange(i, i + 1)
+            if (transform(cand) == target) return cand
+        }
+        var r = raw
+        while (r.isNotEmpty()) {
+            r = r.dropLast(1)
+            val t = transform(r)
+            val acceptable = target.startsWith(t) ||
+                (t.length == target.length &&
+                    t.indices.all { bareChar(t[it]) == bareChar(target[it]) } &&
+                    t.count { it.code > 127 } <= target.count { it.code > 127 })
+            if (t.length <= target.length && acceptable) return r
+        }
+        return ""
+    }
+
     private fun isVowelChar(c: Char) = c in plainVowels || c in markedVowels || c == 'w'
 
     private fun vowelBefore(text: String, i: Int) = (0 until i).any { isVowelChar(text[it]) }

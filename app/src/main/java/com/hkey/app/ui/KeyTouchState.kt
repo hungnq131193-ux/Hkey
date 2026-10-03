@@ -8,7 +8,7 @@ class KeyTouchState(
     val repeatFirstMs: Long = 400,
     val repeatMs: Long = 60
 ) {
-    class Ptr(var key: KbKey, val startX: Float, var swipeAcc: Float = 0f)
+    class Ptr(var key: KbKey, val startX: Float, var swipeAcc: Float = 0f, var swiping: Boolean = false)
 
     val ptrs = HashMap<Int, Ptr>()
     val consumed = HashSet<Int>()

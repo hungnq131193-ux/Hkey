@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.2.0 (versionCode 14)
+
+**Giao diện mới**
+- Phím có bóng đổ, bo góc mềm, bảng màu sáng/tối tinh chỉnh; Enter tô màu
+  nhấn (accent). Icon vẽ vector thay ký tự ⇧ ⌫ ↵ (hiển thị đồng nhất mọi máy):
+  shift rỗng/đặc/caps lock có vạch dưới; Enter đổi icon theo ô (🔍 tìm kiếm,
+  gửi, đi tiếp, xong, xuống dòng).
+- Hàng q..p hiện số gợi ý góc phím (nhấn giữ ra số); phím cách hiện
+  "HKey · Tiếng Việt / English"; bong bóng phím + dải ký tự phụ có bóng, ô
+  đang chọn tô màu nhấn; ký tự phụ tự viết hoa khi đang Shift (ê -> Ê).
+- Thanh gợi ý: chạm có hiệu ứng, từ dài tự cắt "…".
+- Mọi trang (chữ / ký hiệu / emoji) cùng chiều cao — đổi trang không làm
+  app nhảy layout.
+
+**Sửa lỗi bàn phím bị ẩn khi bấm Space / Enter**
+- Vuốt phím cách dời con trỏ bằng `setSelection` thay cho phím DPAD: DPAD ở
+  cuối/đầu ô làm app chuyển focus sang view khác -> bàn phím ẩn. Thêm ngưỡng
+  vuốt 22dp nên chạm space hơi lệch không còn bị tính là vuốt.
+- Enter ở ô nhiều dòng chèn `\n` trực tiếp (không mô phỏng KeyEvent thiếu cờ
+  bàn phím mềm); ô nhiều dòng có action DONE mặc định -> xuống dòng thay vì
+  đóng bàn phím. Phím ENTER thật (ô một dòng / terminal) gửi qua
+  `sendDownUpKeyEvents` đủ cờ `FLAG_SOFT_KEYBOARD | KEEP_TOUCH_MODE`.
+
+**Đủ phím**
+- Thêm "/" (gạch chéo) và 2 trang ký hiệu kiểu Gboard (`?123` và `=\<`):
+  / \ | ~ ` ^ [ ] { } < > = % _ € £ ¥ ₫ ° • √ π ÷ × © ✓ …; nhấn giữ ra biến
+  thể (– — ± ≠ ≤ ≥ “ ” ¿ ¡ ½ ² …).
+- Ô URL: phím cạnh `?123` thành "/", ô email thành "@" (vẫn giữ để ra emoji).
+- Ô số / điện thoại / ngày giờ mở thẳng trang số.
+
+**Emoji (giữ phím , )**
+- Sửa lỗi trang emoji cao ~19 hàng tràn màn hình (đẩy mất hàng ABC, không
+  quay lại được). Giờ là lưới cuộn dọc (kéo + vuốt quán tính) cao bằng bàn
+  phím, chia 6 nhóm + tab "gần đây" (lưu lại giữa các lần), hàng dưới
+  ABC | nhóm | 📋 | ⌫. Emoji có FE0F (❤️ ☺️ ✌️ …) hiện đúng dạng màu.
+- Giữ , khi đang gõ dở: chốt từ trước rồi mới mở emoji.
+
+**Sửa lỗi khác (tự rà soát)**
+- ⌫ khi đang bôi chọn xoá cả vùng chọn (trước xoá ký tự trước vùng chọn);
+  ⌫ sau emoji xoá trọn emoji (trước xẻ đôi surrogate để lại "�").
+- Đa chạm: long-press của ngón trước không còn bắn nhầm cho ngón sau.
+- Dải ký tự phụ dài hơn bề ngang không còn crash (`coerceIn` min > max).
+- Rò bộ nhớ: listener TalkBack được gỡ khi view bị huỷ (mỗi lần đổi cài
+  đặt trước đây giữ lại view cũ).
+- Âm phím phát qua AudioManager theo cờ của HKey (Space/Enter/⌫ có âm riêng)
+  — không còn im lặng khi tắt "âm chạm" hệ thống.
+- Giữ VI/EN khi máy chỉ có 1 bộ gõ: mở bảng chọn bàn phím thay vì không làm gì.
+
 ## 1.1.1 (versionCode 13)
 
 Sửa theo review code 1.1.0 — mỗi lỗi một commit, có thể revert riêng:

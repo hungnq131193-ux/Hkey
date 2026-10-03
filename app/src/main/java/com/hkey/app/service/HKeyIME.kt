@@ -28,6 +28,7 @@ import com.hkey.app.engine.ViModelBin
 import com.hkey.app.engine.ViSyllable
 import com.hkey.app.ui.KeyboardView
 import com.hkey.app.ui.KbKey
+import com.hkey.app.ui.KbField
 import java.io.File
 
 class HKeyIME : InputMethodService() {
@@ -74,6 +75,12 @@ class HKeyIME : InputMethodService() {
     private var macros = emptyMap<String, String>() // gõ tắt "k=v" mỗi dòng (2.x)
     private var optDoubleSpace = true // 3.x: space-space nhanh -> ". "
     private var lastSpaceTap = 0L
+    // 1.2: vùng chọn hiện tại (onUpdateSelection) — dời con trỏ bằng
+    // setSelection thay vì phím DPAD (DPAD ở cuối ô làm focus nhảy sang view
+    // khác -> bàn phím bị ẩn), và ⌫ xoá đúng vùng đang bôi chọn.
+    private var selStart = -1
+    private var selEnd = -1
+    private var currentField = KbField.TEXT
     @Volatile private var destroyed = false
 
     private val repeatHandler = Handler(Looper.getMainLooper())
@@ -203,6 +210,9 @@ class HKeyIME : InputMethodService() {
             info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
         currentInputType = info.inputType
         currentImeOptions = info.imeOptions
+        selStart = info.initialSelStart
+        selEnd = info.initialSelEnd
+        currentField = fieldOf(info.inputType)
         computeAutoCap(info)
         consumeLearningCleared() // tiêu thụ sớm ngay khi focus ô, không chờ view
     }
@@ -247,14 +257,17 @@ class HKeyIME : InputMethodService() {
         val ks = prefs.getInt("kb_side", 0)
         val kn = prefs.getBoolean("number_row", false)
         val kd = prefs.getBoolean("dark_theme", true)
+        currentField = fieldOf(info.inputType)
         if (inputView == null || kh != appliedKbHeight || ks != appliedKbSide ||
             kn != appliedNumRow || kd != appliedDark
         ) {
             appliedNumRow = kn
             appliedDark = kd
             setInputView(onCreateInputView())
+            kbView?.showPage(startPage(info.inputType))
         } else {
-            kbView?.showPage(KeyboardView.Page.LETTERS)
+            kbView?.fieldKind = currentField
+            kbView?.showPage(startPage(info.inputType))
             updateSuggestions()
         }
         // View tái sử dụng không qua onCreateInputView -> đẩy cờ mới xuống
@@ -262,9 +275,51 @@ class HKeyIME : InputMethodService() {
         kbView?.let {
             it.soundEnabled = optSound
             it.vibrateEnabled = optVibrate
+            it.langVi = vietMode
+            it.enterAction = enterActionOf(info.inputType, info.imeOptions)
         }
         updateAutoShift()
         if (BuildConfig.DEBUG) Log.d("HKeyIME", "onStartInputView ${(System.nanoTime() - t0) / 1_000_000.0} ms")
+    }
+
+    /** 1.2: ô số/điện thoại/ngày giờ mở thẳng trang số-ký hiệu. */
+    private fun startPage(inputType: Int): KeyboardView.Page =
+        when (inputType and InputType.TYPE_MASK_CLASS) {
+            InputType.TYPE_CLASS_NUMBER, InputType.TYPE_CLASS_PHONE,
+            InputType.TYPE_CLASS_DATETIME -> KeyboardView.Page.SYMBOLS
+            else -> KeyboardView.Page.LETTERS
+        }
+
+    /** 1.2: loại ô -> phím cạnh ?123 ("/" cho URL, "@" cho email). */
+    private fun fieldOf(inputType: Int): KbField {
+        if (inputType and InputType.TYPE_MASK_CLASS != InputType.TYPE_CLASS_TEXT) return KbField.TEXT
+        return when (inputType and InputType.TYPE_MASK_VARIATION) {
+            InputType.TYPE_TEXT_VARIATION_URI -> KbField.URL
+            InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+            InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS -> KbField.EMAIL
+            else -> KbField.TEXT
+        }
+    }
+
+    private fun isMultiLine(inputType: Int): Boolean =
+        inputType and InputType.TYPE_MASK_CLASS == InputType.TYPE_CLASS_TEXT &&
+            inputType and (InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_IME_MULTI_LINE) != 0
+
+    /** 1.2: action Enter hiệu lực — dùng chung cho icon và hành vi phím.
+     *  NONE = xuống dòng. Ô nhiều dòng: chỉ gọi action khi app yêu cầu rõ
+     *  (send/search/go/next/previous); DONE/UNSPECIFIED ở ô nhiều dòng là
+     *  mặc định của framework -> xuống dòng, không đóng bàn phím. */
+    private fun enterActionOf(inputType: Int, imeOptions: Int): Int {
+        if (inputType == InputType.TYPE_NULL) return EditorInfo.IME_ACTION_NONE
+        if (imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION != 0) return EditorInfo.IME_ACTION_NONE
+        val action = imeOptions and EditorInfo.IME_MASK_ACTION
+        if (action == EditorInfo.IME_ACTION_NONE || action == EditorInfo.IME_ACTION_UNSPECIFIED) {
+            return EditorInfo.IME_ACTION_NONE
+        }
+        if (isMultiLine(inputType) && action == EditorInfo.IME_ACTION_DONE) {
+            return EditorInfo.IME_ACTION_NONE
+        }
+        return action
     }
 
     // Tự viết hoa chỉ bật ở ô text thường — không bật ở mật khẩu/email/url
@@ -297,6 +352,8 @@ class HKeyIME : InputMethodService() {
         super.onUpdateSelection(
             oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd
         )
+        selStart = newSelStart
+        selEnd = newSelEnd
         // 1.6: update do chính setComposingText của ta gây ra (con trỏ nằm đúng
         // cuối vùng composing) -> ngữ cảnh trước từ không đổi, giữ cache.
         val selfEdit = currentComposingWord.isNotEmpty() &&
@@ -370,6 +427,9 @@ class HKeyIME : InputMethodService() {
         appliedKbHeight = kh
         appliedKbSide = ks
         val kb = KeyboardView(this).apply {
+            fieldKind = currentField
+            recentEmoji = (prefs.getString("recent_emoji", "") ?: "")
+                .split('\n').filter { it.isNotEmpty() }
             configure(kh, ks, appliedDark, appliedNumRow)
             soundEnabled = optSound
             vibrateEnabled = optVibrate
@@ -378,6 +438,9 @@ class HKeyIME : InputMethodService() {
             capsLocked = shiftLocked
             onKey = { dispatchKey(it) }
             onSpaceSwipe = { swipeCursor(it) }
+            onRecentEmoji = { list ->
+                prefs.edit().putString("recent_emoji", list.joinToString("\n")).apply()
+            }
         }
         kbView = kb
         root.findViewById<FrameLayout>(R.id.kb_pages).addView(kb)
@@ -414,23 +477,68 @@ class HKeyIME : InputMethodService() {
             k.tag == "fn:del" -> handleDelete()
             k.tag == "fn:shift" -> toggleShift()
             k.tag == "fn:sym" -> kbView?.showPage(KeyboardView.Page.SYMBOLS)
+            k.tag == "fn:sym2" -> kbView?.showPage(KeyboardView.Page.SYMBOLS2)
             k.tag == "fn:abc" -> kbView?.showPage(KeyboardView.Page.LETTERS)
-            k.tag == "fn:emoji" -> kbView?.showPage(KeyboardView.Page.EMOJI)
+            k.tag == "fn:emoji" -> {
+                commitComposing() // chốt từ đang gõ trước khi sang trang emoji
+                requestSuggestions()
+                kbView?.showPage(KeyboardView.Page.EMOJI)
+            }
             k.tag == "fn:lang" -> toggleLang()
-            k.tag == "fn:ime" -> switchToNextInputMethod(false) // 3.x
+            k.tag == "fn:ime" -> { // 3.x; 1.2: không có IME kế -> mở bảng chọn
+                if (!switchToNextInputMethod(false)) {
+                    (getSystemService(Context.INPUT_METHOD_SERVICE)
+                        as? android.view.inputmethod.InputMethodManager)?.showInputMethodPicker()
+                }
+            }
             k.tag == "fn:paste" -> pasteClipboard() // 3.x
         }
     }
 
-    /** Vuốt trên phím cách -> dời con trỏ (3.x). Đang gõ dở thì chốt trước. */
+    /** Vuốt trên phím cách -> dời con trỏ (3.x). Đang gõ dở thì chốt trước.
+     *  1.2: dùng setSelection thay cho phím DPAD — DPAD_RIGHT ở cuối ô (hoặc
+     *  LEFT ở đầu ô) khiến app chuyển focus sang view khác và BÀN PHÍM BỊ ẨN
+     *  (lỗi "thi thoảng bấm space thì mất bàn phím"). */
     private fun swipeCursor(dir: Int) {
         if (currentComposingWord.isNotEmpty()) commitComposing()
-        sendDownUpKeyEvents(
-            if (dir > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
-        )
+        val ic = currentInputConnection ?: return
+        val pos = currentCursor(ic, dir)
+        if (pos < 0) return // không biết vị trí -> bỏ qua, tuyệt đối không gửi DPAD
+        var step = 0
+        if (selStart >= 0 && selEnd >= 0 && selStart != selEnd) {
+            step = 0 // đang bôi chọn: vuốt chỉ thu vùng chọn về một đầu
+        } else if (dir > 0) {
+            val after = ic.getTextAfterCursor(2, 0) ?: return
+            if (after.isEmpty()) return // đã ở cuối ô
+            step = if (after.length >= 2 && Character.isHighSurrogate(after[0])) 2 else 1
+        } else {
+            if (pos <= 0) return // đã ở đầu ô
+            val before = ic.getTextBeforeCursor(2, 0) ?: return
+            if (before.isEmpty()) return
+            step = if (before.length >= 2 && Character.isLowSurrogate(before[before.length - 1])) -2 else -1
+        }
+        val np = (pos + step).coerceAtLeast(0)
+        ic.setSelection(np, np)
+        selStart = np
+        selEnd = np
         contextCache = null
         tailTracker.invalidate() // con trỏ dời khỏi vùng đã biết
         updateAutoShift()
+    }
+
+    /** Vị trí con trỏ (đầu dời): hỏi app qua ExtractedText (đồng bộ, luôn
+     *  đúng kể cả khi onUpdateSelection chưa tới), không được thì dùng vùng
+     *  chọn đã theo dõi. -1 = không xác định được. */
+    private fun currentCursor(ic: android.view.inputmethod.InputConnection, dir: Int): Int {
+        val et = ic.getExtractedText(
+            android.view.inputmethod.ExtractedTextRequest().apply { hintMaxChars = 1 }, 0
+        )
+        if (et != null && et.selectionStart >= 0) {
+            selStart = et.startOffset + et.selectionStart
+            selEnd = et.startOffset + et.selectionEnd
+        }
+        if (selStart < 0 || selEnd < 0) return -1
+        return if (dir > 0) maxOf(selStart, selEnd) else minOf(selStart, selEnd)
     }
 
     /** 3.x: phím 📋 dán nội dung clipboard (nếu là text). */
@@ -705,8 +813,7 @@ class HKeyIME : InputMethodService() {
 
     private fun handleDelete() {
         if (rawMode) {
-            currentInputConnection?.deleteSurroundingText(1, 0)
-            tailTracker.drop(1)
+            deleteBackward()
             return
         }
         if (currentComposingWord.isNotEmpty()) {
@@ -721,12 +828,52 @@ class HKeyIME : InputMethodService() {
                 currentInputConnection?.setComposingText(transformed, 1)
             }
         } else if (!revertAutoFix()) {
-            currentInputConnection?.deleteSurroundingText(1, 0)
-            tailTracker.drop(1)
+            deleteBackward()
             contextCache = null
             updateAutoShift()
         }
         requestSuggestions()
+    }
+
+    /** 1.2: xoá lùi đúng nghĩa —
+     *  - đang bôi chọn: xoá cả vùng chọn (trước đây xoá ký tự trước vùng chọn);
+     *  - emoji/ký tự ghép: xoá trọn 1 grapheme (trước đây xẻ đôi surrogate
+     *    pair để lại ký tự lỗi "�");
+     *  - ô TYPE_NULL (terminal): gửi phím DEL thật. */
+    private fun deleteBackward() {
+        val ic = currentInputConnection ?: return
+        if (currentInputType == InputType.TYPE_NULL) {
+            sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
+            tailTracker.invalidate()
+            return
+        }
+        if (selStart >= 0 && selEnd >= 0 && selStart != selEnd) {
+            ic.commitText("", 1)
+            val lo = minOf(selStart, selEnd)
+            selStart = lo
+            selEnd = lo
+            tailTracker.invalidate()
+            return
+        }
+        val n = lastGraphemeLength(tailNow())
+        ic.deleteSurroundingText(n, 0)
+        tailTracker.drop(n)
+    }
+
+    /** Số UTF-16 unit của grapheme cuối (emoji + FE0F, cờ, chữ + dấu tổ hợp). */
+    private fun lastGraphemeLength(t: String?): Int {
+        if (t.isNullOrEmpty()) return 1
+        return try {
+            val bi = android.icu.text.BreakIterator.getCharacterInstance()
+            bi.setText(t)
+            val start = bi.preceding(t.length)
+            if (start == android.icu.text.BreakIterator.DONE) 1
+            else (t.length - start).coerceIn(1, t.length)
+        } catch (e: Exception) {
+            if (t.length >= 2 && Character.isLowSurrogate(t.last()) &&
+                Character.isHighSurrogate(t[t.length - 2])
+            ) 2 else 1
+        }
     }
 
     /** Số ký tự trước con trỏ thuộc về từ vừa bị sửa (kể cả space theo sau);
@@ -790,23 +937,29 @@ class HKeyIME : InputMethodService() {
     private fun handleEnter() {
         commitComposing()
         val ic = currentInputConnection ?: return
-        // 1.5: ô một dòng đặt action (send/search/go/done) -> gọi action app,
-        // app không xử lý mới mô phỏng phím Enter (cả DOWN lẫn UP).
-        val action = currentImeOptions and EditorInfo.IME_MASK_ACTION
-        if (action != EditorInfo.IME_ACTION_NONE &&
-            action != EditorInfo.IME_ACTION_UNSPECIFIED &&
-            currentImeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION == 0 &&
-            ic.performEditorAction(action)
-        ) {
+        // 1.5: ô đặt action (send/search/go/done) -> gọi action app.
+        // 1.2: action hiệu lực tính chung với icon (enterActionOf): ô nhiều
+        // dòng có DONE mặc định -> xuống dòng thay vì đóng bàn phím.
+        val action = enterActionOf(currentInputType, currentImeOptions)
+        if (action != EditorInfo.IME_ACTION_NONE && ic.performEditorAction(action)) {
             contextCache = null
             tailTracker.invalidate() // app tự xử lý action — text đổi ngoài tầm
             updateAutoShift()
             return
         }
-        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+        if (currentInputType != InputType.TYPE_NULL && isMultiLine(currentInputType)) {
+            // 1.2: ô nhiều dòng -> chèn "\n" trực tiếp. Không mô phỏng phím
+            // ENTER: KeyEvent thiếu cờ FLAG_SOFT_KEYBOARD/KEEP_TOUCH_MODE làm
+            // app thoát touch-mode / chuyển focus -> bàn phím bị ẩn.
+            ic.commitText("\n", 1)
+            tailTracker.append("\n")
+        } else {
+            // ô một dòng không action / terminal (TYPE_NULL): phím ENTER thật,
+            // gửi qua sendDownUpKeyEvents để có đủ cờ bàn phím mềm.
+            sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
+            tailTracker.invalidate() // app có thể đã thay đổi — đọc lại lần sau
+        }
         contextCache = null
-        tailTracker.invalidate() // \n hoặc app thay đổi — đọc lại lần sau
         updateAutoShift()
     }
 

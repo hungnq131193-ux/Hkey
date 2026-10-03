@@ -3,16 +3,26 @@ package com.hkey.app.ui
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Typeface
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
-import android.view.SoundEffectConstants
+import android.view.VelocityTracker
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
+import android.view.inputmethod.EditorInfo
+import android.widget.OverScroller
 import androidx.customview.widget.ExploreByTouchHelper
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 /** Phím logic: tag "ch:x" (chữ -> engine), "p:x" (dấu/số -> punct),
  *  "fn:*" (chức năng), "tx:x" (commit thẳng: emoji, ký tự phụ).
@@ -26,40 +36,52 @@ class KbKey(
     val longTag: String? = null, // nhấn giữ -> bắn phím khác (vd giữ VI -> đổi IME)
     val repeat: Boolean = false, // ⌫ giữ là xóa liên tục
     val swipe: Boolean = false,  // space: vuốt ngang = dời con trỏ
-    val mini: String? = null     // icon nhỏ góc phải-trên (vd 😊 trên phím ,)
+    val mini: String? = null,    // icon nhỏ góc phải-trên (vd 😊 trên phím ,)
+    val hint: Boolean = false    // 1.2: hiện ký tự phụ đầu tiên mờ ở góc (số trên hàng q..p)
 )
 
 class KbRow(val keys: List<KbKey>, val indent: Float = 0f)
 
-object KbLayouts {
-    private fun ch(c: String, alts: String = "") = KbKey("ch:$c", alts = alts)
-    private fun p(c: String, alts: String = "") = KbKey("p:$c", c, alts = alts)
+/** 1.2: loại ô nhập — đổi phím cạnh ?123 (",", "/" cho URL, "@" cho email). */
+enum class KbField { TEXT, URL, EMAIL }
 
-    private fun bottom(modeTag: String, modeLabel: String) = KbRow(
+object KbLayouts {
+    private fun ch(c: String, alts: String = "", hint: Boolean = false) =
+        KbKey("ch:$c", alts = alts, hint = hint)
+
+    private fun p(c: String, alts: String = "") = KbKey("p:$c", c, alts = alts)
+    private fun del(w: Float = 1.5f) = KbKey("fn:del", "⌫", w, func = true, repeat = true)
+
+    private fun bottom(modeTag: String, modeLabel: String, field: KbField) = KbRow(
         listOf(
             KbKey(modeTag, modeLabel, 1.2f, func = true),
-            // giữ , -> trang emoji (icon 😊 góc); !? của , đã nằm trong alts của .
-            KbKey("p:,", ",", longTag = "fn:emoji", mini = "😊"),
+            // giữ phím này -> trang emoji (icon 😊 góc). URL: "/", email: "@".
+            when (field) {
+                KbField.URL -> KbKey("p:/", "/", alts = ",:", longTag = "fn:emoji", mini = "😊")
+                KbField.EMAIL -> KbKey("p:@", "@", longTag = "fn:emoji", mini = "😊")
+                KbField.TEXT -> KbKey("p:,", ",", longTag = "fn:emoji", mini = "😊")
+            },
             KbKey("fn:lang", "VI", 1.1f, func = true, longTag = "fn:ime"), // giữ -> đổi IME
             KbKey("fn:space", "HKey", 4.0f, swipe = true),
-            p(".", "!?,:;'\""),
+            p(".", "?!,:;/'\""),
             KbKey("fn:enter", "↵", 1.5f, func = true)
         )
     )
 
-    fun letters(numberRow: Boolean): List<KbRow> {
+    fun letters(numberRow: Boolean, field: KbField = KbField.TEXT): List<KbRow> {
         val rows = mutableListOf<KbRow>()
+        val h = !numberRow // có hàng số rồi thì không cần gợi ý số góc phím
         if (numberRow) rows += KbRow((1..9).map { p(it.toString()) } + p("0"))
         rows += KbRow(
             listOf(
-                ch("q", "1"), ch("w", "2"), ch("e", "3ê"), ch("r", "4"),
-                ch("t", "5"), ch("y", "6"), ch("u", "7ư"), ch("i", "8"),
-                ch("o", "9ôơ"), ch("p", "0")
+                ch("q", "1", h), ch("w", "2", h), ch("e", "3êé", h), ch("r", "4", h),
+                ch("t", "5", h), ch("y", "6ý", h), ch("u", "7ưú", h), ch("i", "8í", h),
+                ch("o", "9ôơó", h), ch("p", "0", h)
             )
         )
         rows += KbRow(
             listOf(
-                ch("a", "@ăâ"), ch("s", "#"), ch("d", "\$đ"), ch("f", "%"),
+                ch("a", "@ăâá"), ch("s", "#"), ch("d", "\$đ₫"), ch("f", "_"),
                 ch("g", "&"), ch("h", "-"), ch("j", "+"), ch("k", "("),
                 ch("l", ")")
             ), indent = 0.5f
@@ -67,48 +89,122 @@ object KbLayouts {
         rows += KbRow(
             listOf(
                 KbKey("fn:shift", "⇧", 1.5f, func = true),
-                ch("z", "="), ch("x", "*"), ch("c", "\""), ch("v", "'"),
-                ch("b", ":"), ch("n", ";"), ch("m", "!"),
-                KbKey("fn:del", "⌫", 1.5f, func = true, repeat = true)
+                ch("z", "*"), ch("x", "\""), ch("c", "'"), ch("v", ":"),
+                ch("b", ";"), ch("n", "!"), ch("m", "?/"),
+                del()
             )
         )
-        rows += bottom("fn:sym", "?123")
+        rows += bottom("fn:sym", "?123", field)
         return rows
     }
 
-    fun symbols() = listOf(
-        KbRow((1..9).map { p(it.toString()) } + p("0")),
-        KbRow(listOf(p("@"), p("#"), p("$"), p("%"), p("&"), p("*"), p("("), p(")"), p("-"), p("_"))),
+    /** Trang ký hiệu 1 (kiểu Gboard) — đủ / \ | ~ ` ^ [ ] { } < > ₫ … */
+    fun symbols(field: KbField = KbField.TEXT) = listOf(
         KbRow(
             listOf(
-                p("="), p("+"), p("\""), p("'"), p(":"), p(";"), p("!"), p("?"),
-                KbKey("fn:del", "⌫", 1.5f, func = true, repeat = true)
+                p("1", "¹½⅓¼"), p("2", "²⅔"), p("3", "³¾"), p("4", "⁴"), p("5"),
+                p("6"), p("7"), p("8"), p("9"), p("0", "ⁿ∅")
             )
         ),
-        bottom("fn:abc", "ABC")
+        KbRow(
+            listOf(
+                p("@"), p("#", "№"), p("\$", "₫€£¥¢"), p("_"), p("&", "§"),
+                p("-", "–—·"), p("+", "±"), p("(", "<[{"), p(")", ">]}"), p("/", "\\|")
+            )
+        ),
+        KbRow(
+            listOf(
+                KbKey("fn:sym2", "=\\<", 1.5f, func = true),
+                p("*", "★†"), p("\"", "“”«»"), p("'", "‘’`"), p(":"), p(";"),
+                p("!", "¡"), p("?", "¿"),
+                del()
+            )
+        ),
+        bottom("fn:abc", "ABC", field)
     )
 
-    private val EMOJI =
-        "😀😁😂🤣😃😄😅😆😉😊😋😎😍😘🥰😗😙😚🙂🤗🤔😐😑😶🙄😏😣😥😮🤐😯😪" +
-        "😫😴😌😛😜😝🤤😒😓😔😕🙃🤑😲🙁😖😞😟😤😢😭😦😧😨😩🤯😬😰😱🥵🥶" +
-        "😳🤪😵😡😠🤬😷🤒🤕🤢🤮🥴😇🥳🥺🤠🤡🤥🤫🤭🧐🤓😈👿👍👎👏🙏" +
-        "💪🤝✌🤞👌🤟🤘👋🤚🖐✋🖖👆👇☝✍💅🙌👐🤲💃🕺🏃🚶👶👧👦👩" +
-        "👨👵👴❤🧡💛💚💙💜🖤🤍🤎💔❣💕💞💓💗💖💘💝💯🔥✨🎉🎂🎁🎄⚡⭐"
+    /** Trang ký hiệu 2. */
+    fun symbols2(field: KbField = KbField.TEXT) = listOf(
+        KbRow(
+            listOf(
+                p("~"), p("`"), p("|"), p("•", "·○●"), p("√"),
+                p("π", "Ω"), p("÷"), p("×"), p("¶", "§"), p("∆")
+            )
+        ),
+        KbRow(
+            listOf(
+                p("£"), p("€"), p("¥"), p("₫"), p("^", "↑↓←→"),
+                p("°", "′″"), p("=", "≠≈"), p("{"), p("}"), p("\\")
+            )
+        ),
+        KbRow(
+            listOf(
+                KbKey("fn:sym", "?123", 1.5f, func = true),
+                p("%", "‰"), p("<", "≤«"), p(">", "≥»"), p("["), p("]"),
+                p("©", "®™"), p("✓", "✔✗"),
+                del()
+            )
+        ),
+        bottom("fn:abc", "ABC", field)
+    )
 
-    fun emoji(): List<KbRow> {
-        // Emoji astral = 2 UTF-16 unit — phải tách theo code point, không
-        // chunk theo Char kẻo xẻ đôi surrogate pair.
-        val glyphs = EMOJI.codePoints().toArray().map { String(Character.toChars(it)) }
-        val rows = glyphs.chunked(8).map { line ->
+    /** Nhóm emoji: (icon tab, danh sách cách nhau bởi space). Tab 0 = gần đây. */
+    val EMOJI_TABS = listOf("🕘", "😀", "👋", "🐶", "🍔", "⚽", "❤️")
+
+    private val EMOJI_CATS = listOf(
+        // 1. Mặt cười
+        "😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 ☺️ 😚 😙 😋 😛 😜 " +
+            "🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 😌 😔 😪 🤤 😴 😷 🤒 🤕 " +
+            "🤢 🤮 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎 🤓 🧐 😕 😟 🙁 😮 😯 😲 😳 🥺 😦 😧 😨 😰 " +
+            "😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 😤 😡 😠 🤬 😈 👿 💀 💩 🤡 👻 👽 🤖 😺 😸 " +
+            "😹 😻 😼 😽 🙀 😿 😾",
+        // 2. Cử chỉ & người
+        "👋 🤚 🖐️ ✋ 🖖 👌 🤏 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 " +
+            "🙌 👐 🤲 🤝 🙏 ✍️ 💅 🤳 💪 🦵 🦶 👂 👃 🧠 👀 👁️ 👅 👄 💋 👶 🧒 👦 👧 🧑 " +
+            "👨 👩 🧓 👴 👵 👮 👷 💂 🕵️ 🎅 🤶 👸 🤴 🙇 💁 🙅 🙆 🙋 🤦 🤷 💃 🕺 🚶 🏃 " +
+            "👫 👬 👭 💏 💑 👪",
+        // 3. Động vật & thiên nhiên
+        "🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐔 🐧 🐦 🐤 🦆 🦅 " +
+            "🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐜 🐢 🐍 🦎 🐙 🦑 🦐 🦀 🐡 🐠 🐟 🐬 🐳 " +
+            "🐋 🦈 🐊 🐅 🐆 🦓 🐘 🐪 🦒 🐃 🐄 🐎 🐖 🐑 🐐 🐕 🐈 🐓 🦃 🕊️ 🐇 🐁 🌵 🎄 " +
+            "🌲 🌳 🌴 🌱 🌿 ☘️ 🍀 🍁 🍂 🍃 🌷 🌹 🥀 🌺 🌸 🌼 🌻 🌞 🌝 🌛 🌙 ⭐ 🌟 ✨ " +
+            "⚡ 🔥 🌈 ☀️ ⛅ ☁️ 🌧️ ⛈️ ❄️ ☃️ 🌊 💧",
+        // 4. Đồ ăn & uống
+        "🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🍈 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🍆 🥑 🥦 🥬 🥒 🌶️ 🌽 " +
+            "🥕 🥔 🍠 🥐 🍞 🥖 🧀 🥚 🍳 🥓 🥩 🍗 🍖 🌭 🍔 🍟 🍕 🥪 🌮 🌯 🥗 🍝 🍜 🍲 " +
+            "🍛 🍣 🍱 🥟 🍤 🍙 🍚 🍘 🍥 🥮 🍢 🍡 🍧 🍨 🍦 🥧 🧁 🍰 🎂 🍮 🍭 🍬 🍫 🍿 " +
+            "🍩 🍪 🥜 🍯 🥛 ☕ 🍵 🥤 🍶 🍺 🍻 🥂 🍷 🥃 🍸 🍹",
+        // 5. Hoạt động, đi lại & đồ vật
+        "⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🥊 🥋 ⛳ 🎣 🎽 🛹 ⛸️ 🎿 🏆 🥇 🥈 🥉 🏅 🎖️ " +
+            "🎫 🎪 🎭 🎨 🎬 🎤 🎧 🎼 🎹 🥁 🎷 🎺 🎸 🎻 🎲 🎯 🎳 🎮 🧩 🚗 🚕 🚌 🏎️ 🚓 " +
+            "🚑 🚒 🚚 🛵 🏍️ 🚲 ✈️ 🚀 🚁 ⛵ 🚢 🏠 🏢 🏥 🏫 ⛪ 🗼 🗽 🎡 🏖️ 🏝️ ⛰️ 🗻 📱 " +
+            "💻 ⌨️ 🖥️ 📷 📺 📻 ⏰ ⌛ 💡 🔦 💰 💵 💳 💎 🔧 🔨 🔑 🔒 ✂️ 📌 📎 ✏️ 📝 📚 " +
+            "📖 🎁 🎈 🎉 🎊 🎀 🧧 🏮",
+        // 6. Trái tim & biểu tượng
+        "❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 💯 💢 💥 💫 💦 " +
+            "💨 💬 💭 💤 ✅ ❌ ❓ ❗ ⭕ 🚫 ⛔ ⚠️ ♻️ 🆗 🆕 🆒 🆓 🆘 ➕ ➖ ➗ ✖️ 💲 🔴 " +
+            "🔵 ⚫ ⚪ ⬛ ⬜ 🔶 🔷 ▶️ ⏸️ ⏹️ ⏩ ⏪ 🔀 🔁 🔼 🔽 ⬆️ ⬇️ ⬅️ ➡️ ↩️ ↪️ 🎵 🎶 " +
+            "🔔 🔕 📣 🇻🇳"
+    )
+
+    const val EMOJI_COLS = 8
+
+    /** Emoji của một tab (0 = gần đây). Mỗi phần tử là 1 grapheme (có thể
+     *  gồm nhiều code point: FE0F, cờ) — không xẻ đôi surrogate. */
+    fun emojiList(cat: Int, recent: List<String> = emptyList()): List<String> =
+        if (cat <= 0) recent
+        else EMOJI_CATS.getOrNull(cat - 1)?.split(' ')?.filter { it.isNotBlank() } ?: emptyList()
+
+    /** Trang emoji: các hàng lưới (cuộn dọc trong KeyboardView) + hàng tab
+     *  cố định ở cuối: ABC | 🕘 😀 👋 … | 📋 | ⌫. */
+    fun emoji(cat: Int = 1, recent: List<String> = emptyList()): List<KbRow> {
+        val rows = emojiList(cat, recent).chunked(EMOJI_COLS).map { line ->
             KbRow(line.map { KbKey("tx:$it", it) })
         }
+        val tabs = EMOJI_TABS.mapIndexed { i, icon -> KbKey("fn:ecat:$i", icon, func = true) }
         return rows + KbRow(
-            listOf(
-                KbKey("fn:abc", "ABC", 1.2f, func = true),
-                KbKey("fn:paste", "📋", func = true),
-                KbKey("fn:space", "HKey", 3f, swipe = true),
-                KbKey("fn:enter", "↵", 1.5f, func = true)
-            )
+            listOf(KbKey("fn:abc", "ABC", 1.4f, func = true)) + tabs +
+                listOf(KbKey("fn:paste", "📋", func = true), del(1.4f))
         )
     }
 }
@@ -116,31 +212,42 @@ object KbLayouts {
 class KbPalette(
     val key: Int, val keyPressed: Int, val func: Int, val funcPressed: Int,
     val text: Int, val dim: Int, val accent: Int, val popupBg: Int,
-    val bg: Int, val bar: Int, val divider: Int
+    val bg: Int, val bar: Int, val divider: Int,
+    val shadow: Int, val enter: Int, val enterPressed: Int, val onAccent: Int
 ) {
     companion object {
         val DARK = KbPalette(
-            0xFF3D4149.toInt(), 0xFF5A626E.toInt(), 0xFF2B2E34.toInt(),
-            0xFF49505A.toInt(), 0xFFE8EAED.toInt(), 0xFF9AA0A6.toInt(),
-            0xFF8AB4F8.toInt(), 0xFF454A52.toInt(),
-            0xFF191B1F.toInt(), 0xFF22252A.toInt(), 0xFF3C4043.toInt()
+            key = 0xFF33363C.toInt(), keyPressed = 0xFF4B4F57.toInt(),
+            func = 0xFF26292E.toInt(), funcPressed = 0xFF3D4148.toInt(),
+            text = 0xFFF1F3F4.toInt(), dim = 0xFF9AA0A6.toInt(),
+            accent = 0xFF8AB4F8.toInt(), popupBg = 0xFF44484F.toInt(),
+            bg = 0xFF1A1C20.toInt(), bar = 0xFF1A1C20.toInt(), divider = 0xFF33363C.toInt(),
+            shadow = 0xFF0E0F12.toInt(), enter = 0xFF4C8DF6.toInt(),
+            enterPressed = 0xFF3A73D1.toInt(), onAccent = 0xFFFFFFFF.toInt()
         )
         val LIGHT = KbPalette(
-            0xFFFFFFFF.toInt(), 0xFFD2D7DB.toInt(), 0xFFC4C9CD.toInt(),
-            0xFFA9B0B6.toInt(), 0xFF1F1F1F.toInt(), 0xFF5F6368.toInt(),
-            0xFF1A73E8.toInt(), 0xFFFFFFFF.toInt(),
-            0xFFE9EDF0.toInt(), 0xFFFFFFFF.toInt(), 0xFFD8DBDF.toInt()
+            key = 0xFFFFFFFF.toInt(), keyPressed = 0xFFDADCE0.toInt(),
+            func = 0xFFD3D7DC.toInt(), funcPressed = 0xFFB9BEC5.toInt(),
+            text = 0xFF202124.toInt(), dim = 0xFF5F6368.toInt(),
+            accent = 0xFF1A73E8.toInt(), popupBg = 0xFFFFFFFF.toInt(),
+            bg = 0xFFECEEF1.toInt(), bar = 0xFFECEEF1.toInt(), divider = 0xFFD3D7DC.toInt(),
+            shadow = 0xFFB4B9C0.toInt(), enter = 0xFF1A73E8.toInt(),
+            enterPressed = 0xFF1559B8.toInt(), onAccent = 0xFFFFFFFF.toInt()
         )
     }
 }
 
 /** Bàn phím tự vẽ: một View duy nhất, hit theo Ô (không rớt vào khe giữa
  *  các phím), trượt ngón đổi phím, đa chạm, nhấn giữ ra ký tự phụ, giữ ⌫
- *  lặp xóa, vuốt space dời con trỏ, TalkBack qua ExploreByTouchHelper. */
+ *  lặp xóa, vuốt space dời con trỏ, TalkBack qua ExploreByTouchHelper.
+ *  1.2: icon vector (shift/⌫/enter theo action ô), bóng phím, Enter màu
+ *  nhấn, 2 trang ký hiệu, trang emoji cuộn dọc theo nhóm + gần đây, chiều
+ *  cao mọi trang bằng nhau (không giật khi đổi trang). */
 class KeyboardView(context: Context) : View(context) {
 
     var onKey: (KbKey) -> Unit = {}
     var onSpaceSwipe: (Int) -> Unit = {} // +1 phải / -1 trái
+    var onRecentEmoji: (List<String>) -> Unit = {} // lưu emoji gần đây
 
     var palette = KbPalette.DARK
         set(v) { field = v; invalidate() }
@@ -151,20 +258,37 @@ class KeyboardView(context: Context) : View(context) {
     var vibrateEnabled = true
 
     var shifted = false
-        set(v) { field = v; invalidate() }
+        set(v) { if (field != v) { field = v; invalidate() } }
     var capsLocked = false
-        set(v) { field = v; invalidate() }
+        set(v) { if (field != v) { field = v; invalidate() } }
     var langVi = true
-        set(v) { field = v; invalidate() }
+        set(v) { if (field != v) { field = v; invalidate() } }
 
-    enum class Page { LETTERS, SYMBOLS, EMOJI }
+    /** Action Enter hiệu lực (EditorInfo.IME_ACTION_*; NONE = xuống dòng) —
+     *  quyết định icon phím Enter. */
+    var enterAction = EditorInfo.IME_ACTION_NONE
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** Loại ô nhập (đổi phím , -> / hoặc @). */
+    var fieldKind = KbField.TEXT
+        set(v) {
+            if (field == v) return
+            field = v
+            if (page != Page.EMOJI) showPage(page)
+        }
+
+    var recentEmoji: List<String> = emptyList()
+
+    enum class Page { LETTERS, SYMBOLS, SYMBOLS2, EMOJI }
     var page = Page.LETTERS
         private set
+    private var emojiCat = 1
 
     private var rows: List<KbRow> = KbLayouts.letters(false)
     private val areas = mutableListOf<Area>()
 
-    private class Area(val key: KbKey, val draw: RectF, val hit: RectF)
+    /** [scroll] = ô thuộc lưới emoji (toạ độ nội dung, cộng gridScroll). */
+    private class Area(val key: KbKey, val draw: RectF, val hit: RectF, val scroll: Boolean)
 
     // Quyết định bắn phím/lặp ở lớp thuần KeyTouchState (test JVM được).
     private val touch = KeyTouchState()
@@ -173,18 +297,32 @@ class KeyboardView(context: Context) : View(context) {
     private var altOwner = -1
     private var altSel = -1
     private var altAnchor: Area? = null
-    private var altChars = listOf<Char>()
+    private var altChars = listOf<String>()
     private var previewArea: Area? = null
     private var topRoomPx = 0 // chỗ trống phía trên view còn trong cửa sổ IME
 
     private val density = resources.displayMetrics.density
-    private val scaledDensity = resources.displayMetrics.scaledDensity
-    private val marginH = 2.5f * density
-    private val marginV = 3f * density
+    private val marginH = 2.75f * density
+    private val marginV = 4f * density
     private val padV = 4f * density
-    private val corner = 8f * density
-    private val stepPx = 28 * density // mỗi nấc vuốt space = 1 lần dời con trỏ
+    private val corner = 7f * density
+    private val shadowPx = 1.2f * density
+    private val swipeStartPx = 22 * density // vuốt space: phải vượt ngưỡng này mới dời con trỏ
+    private val swipeStepPx = 12 * density  // mỗi nấc tiếp theo = 1 ký tự
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    private val minFling = ViewConfiguration.get(context).scaledMinimumFlingVelocity.toFloat()
     private val lpMs = 360L
+
+    // ---- lưới emoji cuộn dọc ----
+    private var gridTop = 0f
+    private var gridBottom = 0f
+    private var gridScroll = 0f
+    private var gridMax = 0f
+    private var gridScrollOrigin = 0f
+    private val gridStartY = HashMap<Int, Float>()
+    private val gridScrolling = HashSet<Int>()
+    private val scroller = OverScroller(context)
+    private var velocity: VelocityTracker? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private var lpPid = -1
@@ -197,11 +335,24 @@ class KeyboardView(context: Context) : View(context) {
         }
     }
 
+    private val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val txtPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = android.graphics.Typeface.DEFAULT
+        typeface = Typeface.DEFAULT
     }
+    private val fnTypeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        strokeWidth = 1.9f * density
+    }
+    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val path = Path()
+    private val tmpRect = RectF()
+    private val pressedKeys = HashSet<KbKey>()
 
     /** Dọn mọi chạm đang dở + bong bóng/dải phụ + hẹn giờ — dùng khi đổi
      *  trang (tránh phím "ma" khi đa chạm), ẩn phím, huỷ chạm. */
@@ -210,19 +361,45 @@ class KeyboardView(context: Context) : View(context) {
         handler.removeCallbacks(longPress)
         handler.removeCallbacks(repeater)
         lpPid = -1
+        gridStartY.clear()
+        gridScrolling.clear()
+        velocity?.recycle()
+        velocity = null
         hidePreview()
         hideAlts()
     }
 
     fun showPage(p: Page) {
         clearTouch()
-        page = p
-        rows = when (p) {
-            Page.LETTERS -> KbLayouts.letters(numberRow)
-            Page.SYMBOLS -> KbLayouts.symbols()
-            Page.EMOJI -> KbLayouts.emoji()
+        if (p == Page.EMOJI && page != Page.EMOJI) {
+            // mở emoji: có lịch sử thì vào tab gần đây, chưa có thì mặt cười
+            emojiCat = if (recentEmoji.isNotEmpty()) 0 else 1
+            gridScroll = 0f
+            scroller.forceFinished(true)
         }
+        page = p
+        rows = buildRows()
+        buildAreas()
         requestLayout()
+        invalidate()
+    }
+
+    private fun buildRows(): List<KbRow> = when (page) {
+        Page.LETTERS -> KbLayouts.letters(numberRow, fieldKind)
+        Page.SYMBOLS -> KbLayouts.symbols(fieldKind)
+        Page.SYMBOLS2 -> KbLayouts.symbols2(fieldKind)
+        Page.EMOJI -> KbLayouts.emoji(emojiCat, recentEmoji)
+    }
+
+    private fun setEmojiCategory(cat: Int) {
+        if (page != Page.EMOJI) return
+        emojiCat = cat.coerceIn(0, KbLayouts.EMOJI_TABS.lastIndex)
+        gridScroll = 0f
+        scroller.forceFinished(true)
+        gridStartY.clear()
+        gridScrolling.clear()
+        rows = buildRows()
+        buildAreas()
         invalidate()
     }
 
@@ -232,151 +409,442 @@ class KeyboardView(context: Context) : View(context) {
         sidePx = (sideDp * density).toInt()
         palette = if (dark) KbPalette.DARK else KbPalette.LIGHT
         numberRow = numRow
-        showPage(if (page == Page.LETTERS) Page.LETTERS else page)
+        showPage(page)
     }
+
+    /** Tổng chiều cao vùng phím: cố định theo số hàng trang chữ — mọi trang
+     *  (ký hiệu, emoji) cùng cao, đổi trang không làm app nhảy layout. */
+    private val rowsHeight: Float
+        get() = (if (numberRow) 5 else 4) * keyHeightPx.toFloat()
 
     override fun onMeasure(wm: Int, hm: Int) {
         val w = MeasureSpec.getSize(wm)
-        setMeasuredDimension(w, (rows.size * keyHeightPx + 2 * padV).toInt())
+        setMeasuredDimension(w, (rowsHeight + 2 * padV).toInt())
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        areas.clear()
-        var y = padV
-        for (row in rows) {
-            val sumW = row.keys.sumOf { it.w.toDouble() }.toFloat() + 2 * row.indent
-            val unit = (width - 2 * sidePx) / sumW
-            var x = sidePx + row.indent * unit
-            row.keys.forEachIndexed { i, k ->
-                val cellL = if (i == 0 && row.indent == 0f) 0f else x
-                val cw = k.w * unit
-                val cellR = if (i == row.keys.lastIndex && row.indent == 0f) width.toFloat() else x + cw
-                areas += Area(
-                    k,
-                    RectF(x + marginH, y + marginV, x + cw - marginH, y + keyHeightPx - marginV),
-                    RectF(cellL, y, cellR, y + keyHeightPx)
-                )
-                x += cw
-            }
-            y += keyHeightPx
-        }
-        areas.forEach { a ->
-            if (a.hit.top < padV + marginV) a.hit.top = 0f
-            if (a.hit.bottom > height - padV - marginV) a.hit.bottom = height.toFloat()
-        }
+        buildAreas()
         // Khoảng trống phía trên view trong CỬA SỔ (getLocationInWindow —
         // không lệch edge-to-edge như getLocationOnScreen): bong bóng phím
         // được tràn lên thanh gợi ý nhưng không vượt đỉnh cửa sổ.
         topRoomPx = IntArray(2).also { getLocationInWindow(it) }[1]
     }
 
+    private fun layoutRow(row: KbRow, y: Float, rh: Float) {
+        val w = width.toFloat()
+        val sumW = row.keys.sumOf { it.w.toDouble() }.toFloat() + 2 * row.indent
+        val unit = (w - 2 * sidePx) / sumW
+        var x = sidePx + row.indent * unit
+        row.keys.forEachIndexed { i, k ->
+            val cellL = if (i == 0 && row.indent == 0f) 0f else x
+            val cw = k.w * unit
+            val cellR = if (i == row.keys.lastIndex && row.indent == 0f) w else x + cw
+            areas += Area(
+                k,
+                RectF(x + marginH, y + marginV, x + cw - marginH, y + rh - marginV),
+                RectF(cellL, y, cellR, y + rh),
+                false
+            )
+            x += cw
+        }
+    }
+
+    private fun buildAreas() {
+        areas.clear()
+        if (width == 0) return
+        val total = rowsHeight
+        if (page == Page.EMOJI) {
+            val tabH = keyHeightPx.toFloat()
+            gridTop = padV
+            gridBottom = padV + total - tabH
+            val gridRowH = keyHeightPx * 0.92f
+            val unit = (width - 2f * sidePx) / KbLayouts.EMOJI_COLS
+            val gridRows = rows.dropLast(1)
+            gridRows.forEachIndexed { r, row ->
+                val y = gridTop + r * gridRowH
+                row.keys.forEachIndexed { i, k ->
+                    val x = sidePx + i * unit
+                    areas += Area(
+                        k,
+                        RectF(x + marginH, y + marginV / 2, x + unit - marginH, y + gridRowH - marginV / 2),
+                        RectF(x, y, x + unit, y + gridRowH),
+                        true
+                    )
+                }
+            }
+            gridMax = max(0f, gridRows.size * gridRowH - (gridBottom - gridTop))
+            gridScroll = gridScroll.coerceIn(0f, gridMax)
+            layoutRow(rows.last(), gridBottom, tabH)
+        } else {
+            gridTop = 0f
+            gridBottom = 0f
+            gridMax = 0f
+            val rh = total / rows.size
+            var y = padV
+            for (row in rows) {
+                layoutRow(row, y, rh)
+                y += rh
+            }
+        }
+        // Hàng đầu/cuối: mở vùng chạm tới mép view (không áp cho lưới cuộn).
+        for (a in areas) {
+            if (a.scroll) continue
+            if (a.hit.top < padV + marginV) a.hit.top = 0f
+            if (a.hit.bottom > height - padV - marginV) a.hit.bottom = height.toFloat()
+        }
+    }
+
+    private fun upperCase() = shifted || capsLocked
+
     private fun labelOf(k: KbKey): String = when {
         k.label != null && k.tag == "fn:lang" -> if (langVi) "VI" else "EN"
-        k.label != null && k.tag == "fn:shift" -> if (capsLocked) "⇪" else "⇧"
         k.label != null -> k.label
         k.tag.startsWith("ch:") -> {
             val c = k.tag.removePrefix("ch:")
-            if (shifted || capsLocked) c.uppercase() else c
+            if (upperCase()) c.uppercase() else c
         }
         k.tag.startsWith("p:") || k.tag.startsWith("tx:") -> k.tag.substring(3)
         else -> ""
     }
 
-    private fun keyAt(x: Float, y: Float): KbKey? =
-        areas.firstOrNull { it.hit.contains(x, y) }?.key
-            ?: areas.minByOrNull { a -> // ngoài biên: gán phím gần nhất
-                val dx = maxOf(a.hit.left - x, 0f, x - a.hit.right)
-                val dy = maxOf(a.hit.top - y, 0f, y - a.hit.bottom)
-                dx * dx + dy * dy
-            }?.key
-
-    override fun onDraw(c: Canvas) {
+    /** Ô dưới điểm chạm; ngoài biên thì gán ô gần nhất cùng vùng (lưới emoji
+     *  hoặc phím thường). Lưới emoji tính theo toạ độ đã cuộn. */
+    private fun areaAt(x: Float, y: Float): Area? {
+        val inGrid = page == Page.EMOJI && y < gridBottom
+        val gy = if (inGrid) y + gridScroll else y
+        var best: Area? = null
+        var bestD = Float.MAX_VALUE
         for (a in areas) {
-            val pressed = touch.ptrs.values.any { it.key === a.key }
-            keyPaint.color = when {
-                pressed && a.key.func -> palette.funcPressed
-                pressed -> palette.keyPressed
-                a.key.func -> palette.func
-                else -> palette.key
-            }
-            c.drawRoundRect(a.draw, corner, corner, keyPaint)
-            txtPaint.color = when {
-                a.key.tag == "fn:shift" && (shifted || capsLocked) -> palette.accent
-                a.key.tag == "fn:lang" -> palette.accent
-                a.key.tag == "fn:space" -> palette.dim
-                else -> palette.text
-            }
-            txtPaint.textSize = density * when {
-                a.key.tag == "fn:lang" -> 13f
-                a.key.func -> 16f
-                a.key.tag.startsWith("tx:") -> 20f
-                else -> 19f
-            }
-            val ty = a.draw.centerY() - (txtPaint.descent() + txtPaint.ascent()) / 2
-            c.drawText(labelOf(a.key), a.draw.centerX(), ty, txtPaint)
-            a.key.mini?.let { m -> // icon nhỏ góc phải-trên (giữ phím -> chức năng)
-                txtPaint.color = palette.dim
-                txtPaint.textSize = scaledDensity * 11f
-                c.drawText(m, a.draw.right - 7 * density, a.draw.top + 13 * density, txtPaint)
+            if (a.scroll != inGrid) continue
+            if (a.hit.contains(x, gy)) return a
+            val dx = maxOf(a.hit.left - x, 0f, x - a.hit.right)
+            val dy = maxOf(a.hit.top - gy, 0f, gy - a.hit.bottom)
+            val d = dx * dx + dy * dy
+            if (d < bestD) {
+                bestD = d
+                best = a
             }
         }
+        return best
+    }
+
+    private fun keyAt(x: Float, y: Float): KbKey? = areaAt(x, y)?.key
+
+    // ------------------------------------------------------------ vẽ
+
+    override fun onDraw(c: Canvas) {
+        pressedKeys.clear()
+        for ((pid, p) in touch.ptrs) if (pid !in gridScrolling) pressedKeys += p.key
+
+        if (page == Page.EMOJI) drawEmojiGrid(c)
+        for (a in areas) if (!a.scroll) drawKey(c, a)
         drawPreview(c)
         drawAltStrip(c)
+    }
+
+    private fun drawEmojiGrid(c: Canvas) {
+        c.save()
+        c.clipRect(0f, gridTop, width.toFloat(), gridBottom)
+        c.translate(0f, -gridScroll)
+        val visTop = gridTop + gridScroll
+        val visBottom = gridBottom + gridScroll
+        var any = false
+        txtPaint.typeface = Typeface.DEFAULT
+        txtPaint.textSize = 26 * density
+        for (a in areas) {
+            if (!a.scroll) continue
+            any = true
+            if (a.draw.bottom < visTop || a.draw.top > visBottom) continue
+            if (a.key in pressedKeys) {
+                keyPaint.color = palette.keyPressed
+                c.drawRoundRect(a.draw, corner, corner, keyPaint)
+            }
+            txtPaint.color = palette.text
+            val ty = a.draw.centerY() - (txtPaint.descent() + txtPaint.ascent()) / 2
+            c.drawText(labelOf(a.key), a.draw.centerX(), ty, txtPaint)
+        }
+        c.restore()
+        if (!any) {
+            txtPaint.color = palette.dim
+            txtPaint.textSize = 14 * density
+            val cy = (gridTop + gridBottom) / 2
+            c.drawText(
+                if (emojiCat == 0) "Chưa có emoji dùng gần đây" else "Trống",
+                width / 2f, cy, txtPaint
+            )
+        }
+        // thanh cuộn mảnh bên phải
+        if (gridMax > 0f) {
+            val vh = gridBottom - gridTop
+            val barH = max(vh * vh / (vh + gridMax), 24 * density)
+            val barTop = gridTop + (vh - barH) * (gridScroll / gridMax)
+            keyPaint.color = palette.dim and 0x00FFFFFF or 0x66000000
+            tmpRect.set(width - 4 * density, barTop, width - 1.5f * density, barTop + barH)
+            c.drawRoundRect(tmpRect, 2 * density, 2 * density, keyPaint)
+        }
+    }
+
+    private fun drawKey(c: Canvas, a: Area) {
+        val k = a.key
+        val pressed = k in pressedKeys
+        val isEnter = k.tag == "fn:enter"
+        val isTab = k.tag.startsWith("fn:ecat:")
+        val tabSel = isTab && k.tag == "fn:ecat:$emojiCat"
+
+        // nền phím + bóng đổ 1dp (tab emoji phẳng, chỉ tô khi chọn/nhấn)
+        if (!isTab || pressed || tabSel) {
+            val bg = when {
+                isTab -> if (pressed) palette.funcPressed else palette.func
+                isEnter && pressed -> palette.enterPressed
+                isEnter -> palette.enter
+                pressed && k.func -> palette.funcPressed
+                pressed -> palette.keyPressed
+                k.func -> palette.func
+                else -> palette.key
+            }
+            if (!isTab) {
+                keyPaint.color = palette.shadow
+                tmpRect.set(a.draw)
+                tmpRect.offset(0f, shadowPx)
+                c.drawRoundRect(tmpRect, corner, corner, keyPaint)
+            }
+            keyPaint.color = bg
+            c.drawRoundRect(a.draw, corner, corner, keyPaint)
+        }
+
+        val fg = when {
+            isEnter -> palette.onAccent
+            k.tag == "fn:shift" && upperCase() -> palette.accent
+            k.tag == "fn:lang" -> palette.accent
+            else -> palette.text
+        }
+        when (k.tag) {
+            "fn:shift" -> { drawShift(c, a.draw, fg); return }
+            "fn:del" -> { drawBackspace(c, a.draw, fg); return }
+            "fn:enter" -> { drawEnter(c, a.draw, fg); return }
+            "fn:space" -> {
+                txtPaint.typeface = Typeface.DEFAULT
+                txtPaint.color = palette.dim
+                txtPaint.textSize = 13 * density
+                val label = if (langVi) "HKey · Tiếng Việt" else "HKey · English"
+                val ty = a.draw.centerY() - (txtPaint.descent() + txtPaint.ascent()) / 2
+                c.drawText(label, a.draw.centerX(), ty, txtPaint)
+                return
+            }
+        }
+
+        txtPaint.color = fg
+        txtPaint.typeface = if (k.func) fnTypeface else Typeface.DEFAULT
+        txtPaint.textSize = density * when {
+            isTab -> 19f
+            k.tag == "fn:lang" -> 14f
+            k.tag == "fn:paste" -> 18f
+            k.func -> 14.5f
+            k.tag.startsWith("tx:") -> 22f
+            else -> 21f
+        }
+        val ty = a.draw.centerY() - (txtPaint.descent() + txtPaint.ascent()) / 2
+        c.drawText(labelOf(k), a.draw.centerX(), ty, txtPaint)
+        if (tabSel) { // gạch chân tab đang chọn
+            keyPaint.color = palette.accent
+            val hw = min(a.draw.width() * 0.28f, 10 * density)
+            tmpRect.set(a.draw.centerX() - hw, a.draw.bottom - 3.5f * density,
+                a.draw.centerX() + hw, a.draw.bottom - 1.5f * density)
+            c.drawRoundRect(tmpRect, density, density, keyPaint)
+        }
+
+        // gợi ý số góc phải-trên (hàng q..p khi không bật hàng số)
+        if (k.hint && k.alts.isNotEmpty()) {
+            txtPaint.typeface = Typeface.DEFAULT
+            txtPaint.color = palette.dim
+            txtPaint.textSize = 10.5f * density
+            c.drawText(k.alts.substring(0, 1), a.draw.right - 6.5f * density,
+                a.draw.top + 12 * density, txtPaint)
+        }
+        k.mini?.let { m -> // icon nhỏ góc phải-trên (giữ phím -> chức năng)
+            txtPaint.typeface = Typeface.DEFAULT
+            txtPaint.color = palette.dim
+            txtPaint.textSize = 9.5f * density
+            c.drawText(m, a.draw.right - 8 * density, a.draw.top + 12 * density, txtPaint)
+        }
+    }
+
+    private fun iconSize(r: RectF) = min(r.width(), r.height()) * 0.46f
+
+    private fun drawShift(c: Canvas, r: RectF, color: Int) {
+        val s = iconSize(r)
+        val cx = r.centerX()
+        val cy = r.centerY() - (if (capsLocked) s * 0.08f else 0f)
+        path.reset()
+        path.moveTo(cx, cy - s * 0.5f)
+        path.lineTo(cx + s * 0.5f, cy + s * 0.04f)
+        path.lineTo(cx + s * 0.22f, cy + s * 0.04f)
+        path.lineTo(cx + s * 0.22f, cy + s * 0.42f)
+        path.lineTo(cx - s * 0.22f, cy + s * 0.42f)
+        path.lineTo(cx - s * 0.22f, cy + s * 0.04f)
+        path.lineTo(cx - s * 0.5f, cy + s * 0.04f)
+        path.close()
+        if (upperCase()) {
+            fillPaint.color = color
+            c.drawPath(path, fillPaint)
+        } else {
+            strokePaint.color = color
+            c.drawPath(path, strokePaint)
+        }
+        if (capsLocked) { // caps lock: thêm vạch dưới mũi tên
+            strokePaint.color = color
+            c.drawLine(cx - s * 0.24f, cy + s * 0.64f, cx + s * 0.24f, cy + s * 0.64f, strokePaint)
+        }
+    }
+
+    private fun drawBackspace(c: Canvas, r: RectF, color: Int) {
+        val s = iconSize(r)
+        val cx = r.centerX()
+        val cy = r.centerY()
+        val left = cx - s * 0.58f
+        val right = cx + s * 0.55f
+        val top = cy - s * 0.36f
+        val bottom = cy + s * 0.36f
+        val notch = left + s * 0.32f
+        path.reset()
+        path.moveTo(left, cy)
+        path.lineTo(notch, top)
+        path.lineTo(right, top)
+        path.lineTo(right, bottom)
+        path.lineTo(notch, bottom)
+        path.close()
+        strokePaint.color = color
+        c.drawPath(path, strokePaint)
+        val xx = (notch + right) / 2 + s * 0.02f
+        val d = s * 0.14f
+        c.drawLine(xx - d, cy - d, xx + d, cy + d, strokePaint)
+        c.drawLine(xx - d, cy + d, xx + d, cy - d, strokePaint)
+    }
+
+    /** Icon Enter theo action ô: tìm kiếm / gửi / đi tiếp / xong / xuống dòng. */
+    private fun drawEnter(c: Canvas, r: RectF, color: Int) {
+        val s = iconSize(r)
+        val cx = r.centerX()
+        val cy = r.centerY()
+        strokePaint.color = color
+        fillPaint.color = color
+        when (enterAction) {
+            EditorInfo.IME_ACTION_SEARCH -> {
+                c.drawCircle(cx - s * 0.1f, cy - s * 0.1f, s * 0.28f, strokePaint)
+                c.drawLine(cx + s * 0.11f, cy + s * 0.11f, cx + s * 0.42f, cy + s * 0.42f, strokePaint)
+            }
+            EditorInfo.IME_ACTION_SEND -> {
+                path.reset()
+                path.moveTo(cx - s * 0.44f, cy - s * 0.42f)
+                path.lineTo(cx + s * 0.48f, cy)
+                path.lineTo(cx - s * 0.44f, cy + s * 0.42f)
+                path.lineTo(cx - s * 0.26f, cy)
+                path.close()
+                c.drawPath(path, fillPaint)
+            }
+            EditorInfo.IME_ACTION_GO, EditorInfo.IME_ACTION_NEXT -> {
+                c.drawLine(cx - s * 0.44f, cy, cx + s * 0.42f, cy, strokePaint)
+                c.drawLine(cx + s * 0.1f, cy - s * 0.32f, cx + s * 0.42f, cy, strokePaint)
+                c.drawLine(cx + s * 0.1f, cy + s * 0.32f, cx + s * 0.42f, cy, strokePaint)
+            }
+            EditorInfo.IME_ACTION_PREVIOUS -> {
+                c.drawLine(cx + s * 0.44f, cy, cx - s * 0.42f, cy, strokePaint)
+                c.drawLine(cx - s * 0.1f, cy - s * 0.32f, cx - s * 0.42f, cy, strokePaint)
+                c.drawLine(cx - s * 0.1f, cy + s * 0.32f, cx - s * 0.42f, cy, strokePaint)
+            }
+            EditorInfo.IME_ACTION_DONE -> {
+                path.reset()
+                path.moveTo(cx - s * 0.42f, cy + s * 0.02f)
+                path.lineTo(cx - s * 0.12f, cy + s * 0.32f)
+                path.lineTo(cx + s * 0.44f, cy - s * 0.3f)
+                c.drawPath(path, strokePaint)
+            }
+            else -> { // ↵ xuống dòng
+                path.reset()
+                path.moveTo(cx + s * 0.42f, cy - s * 0.38f)
+                path.lineTo(cx + s * 0.42f, cy + s * 0.12f)
+                path.lineTo(cx - s * 0.4f, cy + s * 0.12f)
+                c.drawPath(path, strokePaint)
+                path.reset()
+                path.moveTo(cx - s * 0.13f, cy - s * 0.15f)
+                path.lineTo(cx - s * 0.42f, cy + s * 0.12f)
+                path.lineTo(cx - s * 0.13f, cy + s * 0.39f)
+                c.drawPath(path, strokePaint)
+            }
+        }
     }
 
     /** Bong bóng phím nổi trên phím đang bấm; hàng trên tràn lên thanh gợi ý
      *  (y âm vẫn trong cửa sổ IME). */
     private fun drawPreview(c: Canvas) {
         val a = previewArea ?: return
-        val pw = maxOf(a.draw.width() * 1.5f, 44 * density)
-        val ph = keyHeightPx * 1.4f
-        val cx = a.draw.centerX().coerceIn(pw / 2, width - pw / 2)
-        val top = (a.draw.top - ph - 4 * density).coerceAtLeast(-topRoomPx.toFloat())
+        val pw = max(a.draw.width() * 1.3f, 46 * density)
+        val ph = min(keyHeightPx * 1.25f, 66 * density)
+        val cx = a.draw.centerX().coerceIn(pw / 2, max(pw / 2, width - pw / 2))
+        val top = (a.draw.top - ph - 6 * density).coerceAtLeast(-topRoomPx.toFloat())
+        tmpRect.set(cx - pw / 2, top + shadowPx * 1.5f, cx + pw / 2, top + ph + shadowPx * 1.5f)
+        keyPaint.color = palette.shadow
+        c.drawRoundRect(tmpRect, corner * 1.3f, corner * 1.3f, keyPaint)
+        tmpRect.set(cx - pw / 2, top, cx + pw / 2, top + ph)
         keyPaint.color = palette.popupBg
-        c.drawRoundRect(RectF(cx - pw / 2, top, cx + pw / 2, top + ph), corner, corner, keyPaint)
+        c.drawRoundRect(tmpRect, corner * 1.3f, corner * 1.3f, keyPaint)
+        txtPaint.typeface = Typeface.DEFAULT
         txtPaint.color = palette.text
-        txtPaint.textSize = 26 * scaledDensity
+        txtPaint.textSize = 28 * density
         val ty = top + ph / 2 - (txtPaint.descent() + txtPaint.ascent()) / 2
         c.drawText(labelOf(a.key), cx, ty, txtPaint)
     }
 
+    private fun altCellW(): Float {
+        val n = max(1, altChars.size)
+        return min(42 * density, (width - 8 * density) / n)
+    }
+
     /** Toạ độ dải ký tự phụ (long-press) trong view — dùng chung cho vẽ và
-     *  đổi ô chọn khi trượt ngón. */
+     *  đổi ô chọn khi trượt ngón. Không bao giờ rộng quá view (tránh crash
+     *  coerceIn khi nhiều ký tự phụ). */
     private fun altStripRect(): RectF? {
         val a = altAnchor ?: return null
         if (altChars.isEmpty()) return null
-        val w = 40 * density * altChars.size + 8 * density
-        val h = 56 * density
-        val left = (a.draw.centerX() - w / 2).coerceIn(0f, width - w)
-        val top = (a.draw.top - h).coerceAtLeast(-topRoomPx.toFloat())
+        val w = altCellW() * altChars.size + 8 * density
+        val h = 54 * density
+        val left = (a.draw.centerX() - w / 2).coerceIn(0f, max(0f, width - w))
+        val top = (a.draw.top - h - 4 * density).coerceAtLeast(-topRoomPx.toFloat())
         return RectF(left, top, left + w, top + h)
     }
 
     private fun drawAltStrip(c: Canvas) {
         val r = altStripRect() ?: return
+        tmpRect.set(r)
+        tmpRect.offset(0f, shadowPx * 1.5f)
+        keyPaint.color = palette.shadow
+        c.drawRoundRect(tmpRect, corner * 1.3f, corner * 1.3f, keyPaint)
         keyPaint.color = palette.popupBg
-        c.drawRoundRect(r, corner, corner, keyPaint)
-        val cw = 40 * density
+        c.drawRoundRect(r, corner * 1.3f, corner * 1.3f, keyPaint)
+        val cw = altCellW()
         val pad = 4 * density
-        txtPaint.color = palette.text
-        txtPaint.textSize = 19 * scaledDensity
+        txtPaint.typeface = Typeface.DEFAULT
+        txtPaint.textSize = 21 * density
         altChars.forEachIndexed { i, ch ->
             val cellL = r.left + pad + cw * i
             if (i == altSel) {
-                keyPaint.color = palette.keyPressed
-                c.drawRect(cellL, r.top + pad, cellL + cw, r.bottom - pad, keyPaint)
+                keyPaint.color = palette.enter
+                tmpRect.set(cellL, r.top + pad, cellL + cw, r.bottom - pad)
+                c.drawRoundRect(tmpRect, corner, corner, keyPaint)
             }
+            txtPaint.color = if (i == altSel) palette.onAccent else palette.text
             val ty = r.centerY() - (txtPaint.descent() + txtPaint.ascent()) / 2
-            c.drawText(ch.toString(), cellL + cw / 2, ty, txtPaint)
+            c.drawText(ch, cellL + cw / 2, ty, txtPaint)
         }
     }
 
     /** 6d: vẽ lại chỉ vùng một phím thay vì invalidate() toàn view. */
     private fun invalidateArea(a: Area) {
+        if (a.scroll) { invalidate(); return }
         invalidate(
             android.graphics.Rect(
                 a.draw.left.toInt(), a.draw.top.toInt(),
-                a.draw.right.toInt() + 1, a.draw.bottom.toInt() + 1
+                a.draw.right.toInt() + 1, (a.draw.bottom + shadowPx).toInt() + 1
             )
         )
     }
@@ -391,10 +859,42 @@ class KeyboardView(context: Context) : View(context) {
         }
     }
 
+    // ------------------------------------------------------------ phản hồi
+
+    private fun click(k: KbKey) {
+        if (soundEnabled) {
+            val fx = when (k.tag) {
+                "fn:del" -> AudioManager.FX_KEYPRESS_DELETE
+                "fn:space" -> AudioManager.FX_KEYPRESS_SPACEBAR
+                "fn:enter" -> AudioManager.FX_KEYPRESS_RETURN
+                else -> AudioManager.FX_KEYPRESS_STANDARD
+            }
+            // 1.2: phát qua AudioManager theo cờ của HKey — không phụ thuộc
+            // "âm thanh chạm" hệ thống (bật trong app mà không kêu).
+            audio?.playSoundEffect(fx, -1f)
+        }
+        if (vibrateEnabled) {
+            @Suppress("DEPRECATION")
+            performHapticFeedback(
+                HapticFeedbackConstants.KEYBOARD_TAP,
+                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+            )
+        }
+    }
+
     private fun feed(k: KbKey) {
-        if (soundEnabled) playSoundEffect(SoundEffectConstants.CLICK)
-        if (vibrateEnabled) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        click(k)
+        if (k.tag.startsWith("fn:ecat:")) { // tab nhóm emoji: xử lý tại chỗ
+            setEmojiCategory(k.tag.removePrefix("fn:ecat:").toIntOrNull() ?: 1)
+            return
+        }
+        if (page == Page.EMOJI && k.tag.startsWith("tx:")) pushRecent(k.tag.substring(3))
         onKey(k)
+    }
+
+    private fun pushRecent(e: String) {
+        recentEmoji = (listOf(e) + recentEmoji.filter { it != e }).take(32)
+        onRecentEmoji(recentEmoji)
     }
 
     private fun hidePreview() {
@@ -404,7 +904,7 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     private fun showPreview(a: Area) {
-        if (a.key.func || a.key.tag == "fn:space") { hidePreview(); return }
+        if (a.key.func || a.key.tag == "fn:space" || a.scroll) { hidePreview(); return }
         if (previewArea === a) return
         previewArea = a
         invalidateOverlay()
@@ -422,20 +922,26 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     private fun fireLongPress() {
-        val p = touch.ptrs[lpPid] ?: return
+        val pid = lpPid
+        val p = touch.ptrs[pid] ?: return
+        if (pid in gridScrolling || pid in touch.consumed) return
         val k = p.key
         if (k.longTag != null) {
-            touch.consumed += lpPid
+            touch.consumed += pid
+            hidePreview()
+            if (vibrateEnabled) performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             feed(KbKey(k.longTag, func = true))
             return
         }
         if (k.alts.isEmpty()) return
         val a = areaOf(k) ?: return
-        touch.consumed += lpPid
+        touch.consumed += pid
         altAnchor = a
-        altChars = k.alts.toList()
+        // chữ đang viết hoa -> ký tự phụ là chữ cũng hoa (ê -> Ê)
+        val up = k.tag.startsWith("ch:") && upperCase()
+        altChars = k.alts.map { if (up) it.uppercase() else it.toString() }
         altSel = 0
-        altOwner = lpPid
+        altOwner = pid
         hidePreview() // dải phụ thay bong bóng
         invalidateOverlay()
         if (vibrateEnabled) performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -443,7 +949,7 @@ class KeyboardView(context: Context) : View(context) {
 
     private fun updateAltSel(x: Float) {
         val r = altStripRect() ?: return
-        val idx = ((x - r.left - 4 * density) / (40 * density)).toInt()
+        val idx = ((x - r.left - 4 * density) / altCellW()).toInt()
             .coerceIn(0, altChars.size - 1)
         if (idx != altSel) {
             altSel = idx
@@ -451,35 +957,73 @@ class KeyboardView(context: Context) : View(context) {
         }
     }
 
-    private fun commitAlt(pid: Int, k: KbKey?): Boolean {
+    private fun commitAlt(pid: Int): Boolean {
         if (altAnchor == null || altOwner != pid) return false
-        if (k != null && altSel in k.alts.indices) {
-            feed(KbKey("tx:${k.alts[altSel]}", k.alts[altSel].toString()))
-        }
+        val s = altChars.getOrNull(altSel)
+        if (s != null) feed(KbKey("tx:$s", s))
         return true
     }
 
+    // ------------------------------------------------------------ chạm
+
     // 6c: cache trạng thái TalkBack — không gọi getSystemService mỗi MotionEvent.
     private var touchExplorationEnabled = false
+    private val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+    private val teListener = AccessibilityManager.TouchExplorationStateChangeListener { on ->
+        touchExplorationEnabled = on
+        invalidate()
+    }
+
+    override fun computeScroll() {
+        if (scroller.computeScrollOffset()) {
+            gridScroll = scroller.currY.toFloat().coerceIn(0f, gridMax)
+            postInvalidateOnAnimation()
+        }
+    }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         // TalkBack bật: touch đi qua hover-explore + double-tap click,
         // không bắn phím trực tiếp (tránh gõ kép).
         if (touchExplorationEnabled) return super.onTouchEvent(e)
+        if (page == Page.EMOJI) {
+            val vt = velocity ?: VelocityTracker.obtain().also { velocity = it }
+            vt.addMovement(e)
+        }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val i = e.actionIndex
                 val pid = e.getPointerId(i)
-                val k = keyAt(e.getX(i), e.getY(i)) ?: return true
+                val x = e.getX(i)
+                val y = e.getY(i)
+                var stoppedFling = false
+                if (page == Page.EMOJI && !scroller.isFinished) {
+                    scroller.forceFinished(true)
+                    stoppedFling = true
+                }
+                val a = areaAt(x, y) ?: return true
+                val k = a.key
                 hideAlts()
                 // Repeat: bắn ngay + consumed luôn (nhả không bắn lại — sửa
                 // xoá đúp) + nạp lịch lặp.
-                if (touch.down(pid, k, e.getX(i), e.eventTime)) {
+                if (touch.down(pid, k, x, e.eventTime)) {
                     feed(k)
+                    handler.removeCallbacks(repeater)
                     handler.postDelayed(repeater, touch.repeatFirstMs)
                 }
+                if (a.scroll) {
+                    gridStartY[pid] = y
+                    gridScrollOrigin = gridScroll
+                    if (stoppedFling) { // chạm để dừng cuộn quán tính: không chọn emoji
+                        touch.consumed += pid
+                        gridScrolling += pid
+                    }
+                }
                 // 6d: chỉ vẽ lại phím vừa đổi trạng thái (overlay tự lo vùng tràn).
-                areaOf(k)?.let { a -> showPreview(a); invalidateArea(a) }
+                showPreview(a)
+                invalidateArea(a)
+                // 1.2: huỷ hẹn giờ cũ trước khi hẹn mới — trước đây ngón 1 chưa
+                // nhả mà ngón 2 chạm thì long-press của ngón 2 bắn sớm.
+                handler.removeCallbacks(longPress)
                 lpPid = pid
                 handler.postDelayed(longPress, lpMs)
             }
@@ -493,48 +1037,83 @@ class KeyboardView(context: Context) : View(context) {
                         updateAltSel(x)
                         continue
                     }
-                    if (p.key.swipe) {
-                        val dx = x - p.startX
-                        while (dx - p.swipeAcc > stepPx) {
-                            p.swipeAcc += stepPx
+                    val sy = gridStartY[pid]
+                    if (sy != null) { // ngón trong lưới emoji: kéo = cuộn, không đổi phím
+                        if (pid !in gridScrolling && abs(y - sy) > touchSlop) {
+                            gridScrolling += pid
                             touch.consumed += pid
-                            onSpaceSwipe(1)
+                            if (lpPid == pid) handler.removeCallbacks(longPress)
+                            gridScrollOrigin = gridScroll
+                            gridStartY[pid] = y
+                            invalidate()
                         }
-                        while (p.swipeAcc - dx > stepPx) {
-                            p.swipeAcc -= stepPx
-                            touch.consumed += pid
-                            onSpaceSwipe(-1)
+                        if (pid in gridScrolling) {
+                            val base = gridStartY[pid] ?: y
+                            val ns = (gridScrollOrigin - (y - base)).coerceIn(0f, gridMax)
+                            if (ns != gridScroll) {
+                                gridScroll = ns
+                                invalidate()
+                            }
                         }
                         continue
                     }
-                    val nk = keyAt(x, y)
-                    if (nk != null && nk !== p.key) {
+                    if (p.key.swipe) {
+                        swipeSpace(pid, p, x)
+                        continue
+                    }
+                    val na = areaAt(x, y) ?: continue
+                    val nk = na.key
+                    if (nk !== p.key && !na.scroll) {
                         val oldKey = p.key
                         // Trượt khỏi ⌫ -> repeater dừng (sửa lặp vô hạn).
                         if (touch.moveTo(pid, nk)) handler.removeCallbacks(repeater)
                         if (lpPid == pid) handler.removeCallbacks(longPress)
-                        areaOf(nk)?.let { a -> showPreview(a); invalidateArea(a) }
+                        showPreview(na)
+                        invalidateArea(na)
                         areaOf(oldKey)?.let { invalidateArea(it) }
                     }
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 val pid = e.getPointerId(e.actionIndex)
+                val wasScrolling = pid in gridScrolling
+                if (wasScrolling) {
+                    velocity?.let { vt ->
+                        vt.computeCurrentVelocity(1000)
+                        val vy = vt.getYVelocity(pid)
+                        if (abs(vy) > minFling && gridMax > 0f) {
+                            scroller.fling(
+                                0, gridScroll.toInt(), 0, (-vy).toInt(),
+                                0, 0, 0, gridMax.toInt()
+                            )
+                            postInvalidateOnAnimation()
+                        }
+                    }
+                }
+                gridScrolling -= pid
+                gridStartY.remove(pid)
                 val up = touch.up(pid)
                 if (lpPid == pid) handler.removeCallbacks(longPress)
                 if (up.stopRepeat) handler.removeCallbacks(repeater)
+                val hadAlt = altOwner == pid
                 if (up.fire != null) {
                     feed(up.fire)
-                } else {
-                    commitAlt(pid, up.key)
+                } else if (hadAlt) {
+                    commitAlt(pid)
                 }
                 if (touch.ptrs.isEmpty()) {
                     hidePreview()
                     hideAlts()
                 } else {
+                    if (hadAlt) hideAlts()
                     touch.ptrs.values.firstOrNull()?.let { areaOf(it.key)?.let { a -> showPreview(a) } }
                 }
                 up.key?.let { areaOf(it)?.let { a -> invalidateArea(a) } }
+                if (wasScrolling) invalidate()
+                if (e.actionMasked == MotionEvent.ACTION_UP) {
+                    velocity?.recycle()
+                    velocity = null
+                }
             }
             MotionEvent.ACTION_CANCEL -> {
                 clearTouch()
@@ -544,13 +1123,52 @@ class KeyboardView(context: Context) : View(context) {
         return true
     }
 
+    /** Vuốt trên phím cách: phải vượt ngưỡng [swipeStartPx] mới bắt đầu dời
+     *  con trỏ (chạm hơi lệch không bị tính là vuốt), sau đó mỗi nấc
+     *  [swipeStepPx] dời 1 ký tự. */
+    private fun swipeSpace(pid: Int, p: KeyTouchState.Ptr, x: Float) {
+        val dx = x - p.startX
+        if (!p.swiping) {
+            if (abs(dx) < swipeStartPx) return
+            p.swiping = true
+            p.swipeAcc = dx
+            touch.consumed += pid
+            if (lpPid == pid) handler.removeCallbacks(longPress)
+            hidePreview()
+            onSpaceSwipe(if (dx > 0) 1 else -1)
+            return
+        }
+        var moved = false
+        while (dx - p.swipeAcc > swipeStepPx) {
+            p.swipeAcc += swipeStepPx
+            onSpaceSwipe(1)
+            moved = true
+        }
+        while (p.swipeAcc - dx > swipeStepPx) {
+            p.swipeAcc -= swipeStepPx
+            onSpaceSwipe(-1)
+            moved = true
+        }
+        if (moved && vibrateEnabled) performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+    }
+
     /** Dọn repeat + popup khi bàn phím ẩn/detach — tránh leak window. */
     fun release() {
         clearTouch()
+        scroller.forceFinished(true)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        touchExplorationEnabled = am?.isTouchExplorationEnabled == true
+        am?.addTouchExplorationStateChangeListener(teListener)
     }
 
     override fun onDetachedFromWindow() {
         release()
+        // 1.2: gỡ listener — trước đây mỗi lần dựng lại view (đổi cài đặt)
+        // lại thêm một listener giữ view cũ (rò bộ nhớ).
+        am?.removeTouchExplorationStateChangeListener(teListener)
         super.onDetachedFromWindow()
     }
 
@@ -559,15 +1177,19 @@ class KeyboardView(context: Context) : View(context) {
     private val spoken = mapOf(
         "fn:shift" to "viết hoa", "fn:del" to "xóa", "fn:space" to "khoảng trắng",
         "fn:enter" to "xuống dòng", "fn:sym" to "bảng ký tự", "fn:abc" to "bảng chữ",
+        "fn:sym2" to "ký hiệu khác",
         "fn:lang" to "đổi tiếng Việt Anh", "fn:emoji" to "biểu tượng",
         "fn:paste" to "dán", "p:." to "chấm", "p:," to "phẩy", "p:?" to "chấm hỏi",
-        "p:!" to "chấm than", "p:@" to "a còng"
+        "p:!" to "chấm than", "p:@" to "a còng", "p:/" to "gạch chéo", "p:\\" to "gạch chéo ngược",
+        "fn:ecat:0" to "emoji gần đây", "fn:ecat:1" to "mặt cười", "fn:ecat:2" to "cử chỉ",
+        "fn:ecat:3" to "động vật", "fn:ecat:4" to "đồ ăn", "fn:ecat:5" to "hoạt động",
+        "fn:ecat:6" to "biểu tượng"
     )
 
     private val touchHelper = object : ExploreByTouchHelper(this) {
         override fun getVirtualViewAt(x: Float, y: Float): Int {
-            val k = keyAt(x, y) ?: return ExploreByTouchHelper.INVALID_ID
-            return areas.indexOfFirst { it.key === k }
+            val a = areaAt(x, y) ?: return ExploreByTouchHelper.INVALID_ID
+            return areas.indexOf(a)
         }
 
         override fun getVisibleVirtualViews(ids: MutableList<Int>) {
@@ -577,11 +1199,17 @@ class KeyboardView(context: Context) : View(context) {
         override fun onPopulateNodeForVirtualView(
             id: Int, node: androidx.core.view.accessibility.AccessibilityNodeInfoCompat
         ) {
-            val a = areas.getOrNull(id) ?: return
+            val a = areas.getOrNull(id)
+            if (a == null) { // id cũ sau khi đổi trang: node rỗng hợp lệ
+                node.setBoundsInParent(android.graphics.Rect(0, 0, 1, 1))
+                node.contentDescription = ""
+                return
+            }
+            val off = if (a.scroll) gridScroll else 0f
             node.setBoundsInParent(
                 android.graphics.Rect(
-                    a.hit.left.toInt(), a.hit.top.toInt(),
-                    a.hit.right.toInt(), a.hit.bottom.toInt()
+                    a.hit.left.toInt(), (a.hit.top - off).toInt(),
+                    a.hit.right.toInt(), (a.hit.bottom - off).toInt()
                 )
             )
             node.contentDescription = spoken[a.key.tag] ?: labelOf(a.key)
@@ -610,14 +1238,7 @@ class KeyboardView(context: Context) : View(context) {
     init {
         // Delegate này tự cấp AccessibilityNodeProvider cho framework.
         androidx.core.view.ViewCompat.setAccessibilityDelegate(this, touchHelper)
-        // 6c: đọc TalkBack một lần + theo listener thay vì hỏi mỗi MotionEvent.
-        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE)
-            as? android.view.accessibility.AccessibilityManager
         touchExplorationEnabled = am?.isTouchExplorationEnabled == true
-        am?.addTouchExplorationStateChangeListener { on ->
-            touchExplorationEnabled = on
-            invalidate()
-        }
     }
 
     override fun dispatchHoverEvent(e: MotionEvent): Boolean =

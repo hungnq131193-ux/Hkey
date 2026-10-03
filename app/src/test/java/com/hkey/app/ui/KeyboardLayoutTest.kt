@@ -62,10 +62,58 @@ class KeyboardLayoutTest {
         assertTrue(emoKeys.any { it.tag == "fn:abc" })
         // mọi tx: phải có label (ký tự emoji)
         assertTrue(emoKeys.filter { it.tag.startsWith("tx:") }.all { it.label != null })
-        // không xẻ đôi surrogate pair: mỗi label = đúng 1 code point
-        assertTrue(emoKeys.filter { it.tag.startsWith("tx:") }.all {
-            it.label!!.codePointCount(0, it.label!!.length) == 1
+        // không xẻ đôi surrogate pair: mọi high surrogate đi kèm low surrogate
+        assertTrue(emoKeys.filter { it.tag.startsWith("tx:") }.all { k ->
+            val s = k.label!!
+            s.indices.all { i ->
+                when {
+                    Character.isHighSurrogate(s[i]) -> i + 1 < s.length && Character.isLowSurrogate(s[i + 1])
+                    Character.isLowSurrogate(s[i]) -> i > 0 && Character.isHighSurrogate(s[i - 1])
+                    else -> true
+                }
+            }
         })
+    }
+
+    @Test
+    fun symbolsHaveFullSet() {
+        // 1.2: thiếu "/" (gạch chéo) và nhiều ký hiệu khác ở 1.1.1
+        val all = (allKeys(KbLayouts.symbols()) + allKeys(KbLayouts.symbols2())).map { it.tag }
+        for (c in listOf("/", "\\", "|", "~", "`", "^", "[", "]", "{", "}", "<", ">",
+            "=", "%", "_", "€", "£", "¥", "₫", "°", "•")) {
+            assertTrue("thiếu ký hiệu $c", "p:$c" in all)
+        }
+        assertTrue("fn:sym2" in allKeys(KbLayouts.symbols()).map { it.tag })
+        assertTrue("fn:sym" in allKeys(KbLayouts.symbols2()).map { it.tag })
+        // phím . có "/" khi nhấn giữ
+        assertTrue(allKeys(KbLayouts.letters(false)).first { it.tag == "p:." }.alts.contains("/"))
+    }
+
+    @Test
+    fun fieldKindChangesCommaKey() {
+        val url = allKeys(KbLayouts.letters(false, KbField.URL)).map { it.tag }
+        assertTrue("p:/" in url)
+        assertFalse("p:," in url)
+        val email = allKeys(KbLayouts.letters(false, KbField.EMAIL))
+        assertEquals("fn:emoji", email.first { it.tag == "p:@" }.longTag)
+    }
+
+    @Test
+    fun emojiCategoriesAndTabs() {
+        for (cat in 1 until KbLayouts.EMOJI_TABS.size) {
+            val list = KbLayouts.emojiList(cat)
+            assertTrue("nhóm $cat quá ít", list.size >= 30)
+            assertEquals("trùng emoji trong nhóm $cat", list.size, list.toSet().size)
+        }
+        // tab gần đây rỗng -> chỉ còn hàng tab, không crash
+        val empty = KbLayouts.emoji(0, emptyList())
+        assertEquals(1, empty.size)
+        assertTrue(empty.last().keys.any { it.tag == "fn:ecat:0" })
+        assertTrue(empty.last().keys.any { it.tag == "fn:del" })
+        // gần đây có dữ liệu
+        val rec = KbLayouts.emoji(0, listOf("😀", "❤️"))
+        assertEquals(2, rec.size)
+        assertEquals("tx:❤️", rec[0].keys[1].tag)
     }
 
     @Test

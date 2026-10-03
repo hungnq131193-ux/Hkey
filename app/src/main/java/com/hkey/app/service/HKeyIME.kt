@@ -56,6 +56,8 @@ class HKeyIME : InputMethodService() {
     private var optSound = true
     private var optVibrate = true
     private var contextCache: Pair<String, String>? = null // (từ trước, từ trước nữa)
+    private var currentInputType = 0 // inputType của ô đang focus (cho getCursorCapsMode)
+    private var tokenGlued = false // từ đang gõ dính sau . @ / : — url/email/ip (1.1)
     private var rawMode = false // ô nhạy cảm: gõ thẳng, không Telex/gợi ý/học (B1,B2)
     @Volatile private var destroyed = false
 
@@ -154,6 +156,7 @@ class HKeyIME : InputMethodService() {
     override fun onStartInput(info: EditorInfo, restarting: Boolean) {
         super.onStartInput(info, restarting)
         rawMode = FieldMode.isRaw(info.inputType)
+        currentInputType = info.inputType
         computeAutoCap(info)
         consumeLearningCleared() // tiêu thụ sớm ngay khi focus ô, không chờ view
     }
@@ -161,11 +164,13 @@ class HKeyIME : InputMethodService() {
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         val t0 = if (BuildConfig.DEBUG) System.nanoTime() else 0L
         super.onStartInputView(info, restarting)
+        currentInputType = info.inputType
         if (!restarting) {
             currentComposingWord.clear()
             lastCommittedWord = ""
             lastAutoFix = null
             contextCache = null
+            tokenGlued = false
         }
         computeAutoCap(info)
         shiftOn = false
@@ -218,15 +223,19 @@ class HKeyIME : InputMethodService() {
         updateAutoShift()
     }
 
-    /** Viết hoa đầu câu: ô trống, sau xuống dòng, sau dấu . ! ? (+ khoảng trắng).
-     *  App không trả text (before==null) thì mặc định viết hoa.
+    /** Viết hoa đầu câu. Nguồn chính: getCursorCapsMode — Android tự tôn trọng
+     *  cờ app đặt (CAP_SENTENCES/WORDS/CHARACTERS) và luật dấu cách (1.1).
+     *  Ô không đặt CAP_SENTENCES (text trơn): tự soi — dấu . ! ? … phải có
+     *  khoảng trắng theo sau mới là kết câu ("hu.io.vn" không bật hoa).
      *  Bật/tắt hai chiều: shift tự động tắt khi ngữ cảnh hết cần hoa;
      *  shift do người dùng bấm tay không bị ghi đè. */
     private fun updateAutoShift() {
         if (!autoCap || currentComposingWord.isNotEmpty()) return
-        val before = currentInputConnection?.getTextBeforeCursor(16, 0)
-        val wantCap = before == null || before.isEmpty() || before.last() == '\n' ||
-            before.trimEnd().let { it.isNotEmpty() && it.last() in ".!?" }
+        val ic = currentInputConnection ?: return
+        val caps = try { ic.getCursorCapsMode(currentInputType) } catch (e: Exception) { 0 }
+        val wantCap = caps != 0 ||
+            (currentInputType and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES == 0 &&
+                TextContext.sentenceBoundary(ic.getTextBeforeCursor(32, 0)))
         val newShift = wantCap || (shiftOn && !shiftAuto)
         if (newShift != shiftOn || wantCap != shiftAuto) {
             shiftOn = newShift
@@ -437,11 +446,15 @@ class HKeyIME : InputMethodService() {
 
     private fun computeContextPair(): Pair<String, String> {
         var before = currentInputConnection?.getTextBeforeCursor(40, 0)?.toString()
-            ?: return lastCommittedWord to ""
+        if (before == null) {
+            tokenGlued = false
+            return lastCommittedWord to ""
+        }
         if (currentComposingWord.isNotEmpty()) {
             val comp = telexEngine.transform(currentComposingWord.toString())
             if (before.endsWith(comp)) before = before.dropLast(comp.length)
         }
+        tokenGlued = TextContext.gluedToken(before)
         return TextContext.lastTwo(before, lastCommittedWord)
     }
 
@@ -505,11 +518,15 @@ class HKeyIME : InputMethodService() {
         // 3.5: không sửa từ viết hoa giữa câu (tên riêng); từ có số và từ
         // ngắn đã chặn trong correction().
         val isProperNoun = prev.isNotEmpty() && typed.any { it.isUpperCase() }
-        val fixed = if (isProperNoun) null else predictor.correction(typed, prev, prev2)
+        // 1.1: mảng trong url/email/ip ("io" trong "hu.io.vn") không sửa, không học.
+        val fixed = if (isProperNoun || tokenGlued) null
+            else predictor.correction(typed, prev, prev2)
         val word = fixed ?: typed
         currentInputConnection?.commitText(word, 1)
-        predictor.recordSequence(prev, word)
-        markLearnedDirty()
+        if (!tokenGlued) {
+            predictor.recordSequence(prev, word)
+            markLearnedDirty()
+        }
         lastCommittedWord = word
         lastAutoFix = if (fixed != null) AutoFix(word, typed, raw) else null
         currentComposingWord.clear()
@@ -648,10 +665,12 @@ class HKeyIME : InputMethodService() {
             // Đang gõ: giữa = bản sửa (nếu sai chính tả) hoặc từ hiện tại,
             // 2 bên = gợi ý hoàn thành (ưu tiên từ hay đi sau từ trước)
             val current = telexEngine.transform(currentComposingWord.toString())
-            val completions = predictor.completions(current, ctx, ctx2)
+            // 1.1: mảng trong url/email/ip -> không gợi ý, không sửa
+            val completions = if (tokenGlued) emptyList()
+                else predictor.completions(current, ctx, ctx2)
             // 3.4: chỉ đề nghị sửa khi từ đang gõ không phải tiền tố hợp lệ
-            val fix = if (predictor.isPrefixOfKnownWord(current)) null
-            else predictor.correction(current, ctx, ctx2)
+            val fix = if (tokenGlued || predictor.isPrefixOfKnownWord(current)) null
+                else predictor.correction(current, ctx, ctx2)
             candidate1?.text = completions.getOrNull(0) ?: ""
             candidate2?.text = fix ?: current
             candidate3?.text = completions.getOrNull(1) ?: ""
@@ -662,6 +681,13 @@ class HKeyIME : InputMethodService() {
             if (fix != null && autoFixTail(fix) > 0) {
                 candidate1?.text = ""
                 candidate2?.text = fix.typed
+                candidate3?.text = ""
+                return
+            }
+            // 1.1: đang đứng giữa url/email/ip -> không gợi ý từ tiếp theo
+            if (tokenGlued) {
+                candidate1?.text = ""
+                candidate2?.text = ""
                 candidate3?.text = ""
                 return
             }

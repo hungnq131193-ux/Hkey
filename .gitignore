@@ -39,3 +39,6 @@ Thumbs.db
 # chỉ tools/build_model.py và số liệu thống kê vi_model.tsv được giữ)
 tools/corpus/
 tools/eval_corpus.txt
+
+# Worktrees
+.worktrees/

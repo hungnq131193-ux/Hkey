@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.0 (versionCode 15)
+
+**Gợi ý học theo mức sử dụng — càng gõ càng chuẩn**
+- Trigram cá nhân: nhớ cả cụm 3 từ hay gõ ("tối nay" -> "đi ngủ"), xếp
+  trên bigram cá nhân nhưng dưới trigram từ điển cho tới khi gõ lặp đủ
+  nhiều.
+- Ưu tiên mới dùng: từ vừa gõ được cộng điểm, mờ dần sau ~14 ngày không
+  dùng lại — thói quen hiện tại thắng thói quen cũ.
+- File dữ liệu học lên v2 (lưu thêm trigram, trần 20k cạnh); vẫn đọc được
+  dữ liệu đã học từ bản cũ — nâng cấp không mất gì.
+
+**Bàn phím theo thiết bị**
+- Màn hình ngang: hàng phím thấp lại ~20% — bàn phím không còn chiếm gần
+  nửa máy.
+- Tablet / màn hình gập: vùng phím giới hạn ~600dp canh giữa, không còn
+  kéo dãn hết chiều ngang.
+
 ## 1.2.0 (versionCode 14)
 
 **Giao diện mới**

@@ -169,10 +169,9 @@ class KeyboardView(context: Context) : View(context) {
     private val areas = mutableListOf<Area>()
 
     private class Area(val key: KbKey, val draw: RectF, val hit: RectF)
-    private class Ptr(var key: KbKey, var startX: Float, var swipeAcc: Float = 0f)
 
-    private val ptrs = HashMap<Int, Ptr>()
-    private val consumed = HashSet<Int>() // long-press/swipe đã ăn -> nhả không phát phím
+    // Quyết định bắn phím/lặp ở lớp thuần KeyTouchState (test JVM được).
+    private val touch = KeyTouchState()
     private var altStrip: PopupWindow? = null
     private var altOwner = -1
     private var altCells = listOf<TextView>()
@@ -187,17 +186,15 @@ class KeyboardView(context: Context) : View(context) {
     private val corner = 8f * density
     private val stepPx = 28 * density // mỗi nấc vuốt space = 1 lần dời con trỏ
     private val lpMs = 360L
-    private val repeatFirstMs = 400L
-    private val repeatMs = 60L
 
     private val handler = Handler(Looper.getMainLooper())
     private var lpPid = -1
     private val longPress = Runnable { fireLongPress() }
-    private var repeatKey: KbKey? = null
     private val repeater = object : Runnable {
         override fun run() {
-            repeatKey?.let { onKey(it) }
-            handler.postDelayed(this, repeatMs)
+            val rk = touch.repeatKey ?: return // đã dừng -> không repost
+            if (touch.repeatDue(SystemClock.uptimeMillis())) feed(rk)
+            handler.postDelayed(this, touch.repeatMs)
         }
     }
 
@@ -280,7 +277,7 @@ class KeyboardView(context: Context) : View(context) {
 
     override fun onDraw(c: Canvas) {
         for (a in areas) {
-            val pressed = ptrs.values.any { it.key === a.key }
+            val pressed = touch.ptrs.values.any { it.key === a.key }
             keyPaint.color = when {
                 pressed && a.key.func -> palette.funcPressed
                 pressed -> palette.keyPressed
@@ -353,16 +350,16 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     private fun fireLongPress() {
-        val p = ptrs[lpPid] ?: return
+        val p = touch.ptrs[lpPid] ?: return
         val k = p.key
         if (k.longTag != null) {
-            consumed += lpPid
+            touch.consumed += lpPid
             feed(KbKey(k.longTag, func = true))
             return
         }
         if (k.alts.isEmpty()) return
         val a = areaOf(k) ?: return
-        consumed += lpPid
+        touch.consumed += lpPid
         val strip = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(palette.popupBg)
@@ -435,12 +432,12 @@ class KeyboardView(context: Context) : View(context) {
                 val i = e.actionIndex
                 val pid = e.getPointerId(i)
                 val k = keyAt(e.getX(i), e.getY(i)) ?: return true
-                ptrs[pid] = Ptr(k, e.getX(i))
                 hideAlts()
-                if (k.repeat) {
+                // Repeat: bắn ngay + consumed luôn (nhả không bắn lại — sửa
+                // xoá đúp) + nạp lịch lặp.
+                if (touch.down(pid, k, e.getX(i), e.eventTime)) {
                     feed(k)
-                    repeatKey = k
-                    handler.postDelayed(repeater, repeatFirstMs)
+                    handler.postDelayed(repeater, touch.repeatFirstMs)
                 }
                 areaOf(k)?.let { showPreview(it) }
                 lpPid = pid
@@ -450,7 +447,7 @@ class KeyboardView(context: Context) : View(context) {
             MotionEvent.ACTION_MOVE -> {
                 for (i in 0 until e.pointerCount) {
                     val pid = e.getPointerId(i)
-                    val p = ptrs[pid] ?: continue
+                    val p = touch.ptrs[pid] ?: continue
                     val x = e.getX(i)
                     val y = e.getY(i)
                     if (altOwner == pid) {
@@ -461,19 +458,20 @@ class KeyboardView(context: Context) : View(context) {
                         val dx = x - p.startX
                         while (dx - p.swipeAcc > stepPx) {
                             p.swipeAcc += stepPx
-                            consumed += pid
+                            touch.consumed += pid
                             onSpaceSwipe(1)
                         }
                         while (p.swipeAcc - dx > stepPx) {
                             p.swipeAcc -= stepPx
-                            consumed += pid
+                            touch.consumed += pid
                             onSpaceSwipe(-1)
                         }
                         continue
                     }
                     val nk = keyAt(x, y)
                     if (nk != null && nk !== p.key) {
-                        p.key = nk
+                        // Trượt khỏi ⌫ -> repeater dừng (sửa lặp vô hạn).
+                        if (touch.moveTo(pid, nk)) handler.removeCallbacks(repeater)
                         if (lpPid == pid) handler.removeCallbacks(longPress)
                         areaOf(nk)?.let { showPreview(it) }
                         invalidate()
@@ -482,32 +480,26 @@ class KeyboardView(context: Context) : View(context) {
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 val pid = e.getPointerId(e.actionIndex)
-                val p = ptrs.remove(pid)
+                val up = touch.up(pid)
                 if (lpPid == pid) handler.removeCallbacks(longPress)
-                if (p != null && p.key.repeat && repeatKey === p.key) {
-                    handler.removeCallbacks(repeater)
-                    repeatKey = null
-                }
-                if (p != null && !consumed.contains(pid)) {
-                    feed(p.key)
+                if (up.stopRepeat) handler.removeCallbacks(repeater)
+                if (up.fire != null) {
+                    feed(up.fire)
                 } else {
-                    commitAlt(pid, p?.key)
+                    commitAlt(pid, up.key)
                 }
-                consumed -= pid
-                if (ptrs.isEmpty()) {
+                if (touch.ptrs.isEmpty()) {
                     hidePreview()
                     hideAlts()
                 } else {
-                    ptrs.values.firstOrNull()?.let { areaOf(it.key)?.let { a -> showPreview(a) } }
+                    touch.ptrs.values.firstOrNull()?.let { areaOf(it.key)?.let { a -> showPreview(a) } }
                 }
                 invalidate()
             }
             MotionEvent.ACTION_CANCEL -> {
-                ptrs.clear()
-                consumed.clear()
+                touch.cancelAll()
                 handler.removeCallbacks(longPress)
                 handler.removeCallbacks(repeater)
-                repeatKey = null
                 hidePreview()
                 hideAlts()
                 invalidate()
@@ -518,11 +510,9 @@ class KeyboardView(context: Context) : View(context) {
 
     /** Dọn repeat + popup khi bàn phím ẩn/detach — tránh leak window. */
     fun release() {
-        ptrs.clear()
-        consumed.clear()
+        touch.cancelAll()
         handler.removeCallbacks(longPress)
         handler.removeCallbacks(repeater)
-        repeatKey = null
         hidePreview()
         hideAlts()
     }

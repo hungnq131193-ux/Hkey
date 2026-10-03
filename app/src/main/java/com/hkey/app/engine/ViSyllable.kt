@@ -40,14 +40,21 @@ object ViSyllable {
     )
     private val codas = setOf("", "c", "ch", "m", "n", "ng", "nh", "p", "t")
 
+    /** Âm cuối thanh chắc: chỉ đi với sắc (1) hoặc nặng (5) (1.3). */
+    private val sharpCodas = setOf("c", "ch", "p", "t")
+
     /** true nếu word là một âm tiết tiếng Việt hợp lệ về mặt hình thái. */
     fun isValid(word: String): Boolean {
         if (word.isEmpty()) return false
         var toneCount = 0
+        var toneVal = 0
         for ((i, c) in word.withIndex()) {
             val (base, tone) = decomp(c)
             if (c !in 'a'..'z' && c !in decompose) return false
-            if (tone > 0) toneCount++
+            if (tone > 0) {
+                toneCount++
+                toneVal = tone
+            }
             if (base == 'đ' && i != 0) return false
         }
         if (toneCount > 1) return false
@@ -56,10 +63,20 @@ object ViSyllable {
             if (!plain.startsWith(onset)) continue
             val rhyme = plain.removePrefix(onset)
             for (len in rhyme.length downTo 1) {
-                if (rhyme.substring(0, len) in nuclei && rhyme.substring(len) in codas)
+                if (rhyme.substring(0, len) in nuclei && rhyme.substring(len) in codas) {
+                    // "tẽt" không hợp lệ — thử cách tách khác trước khi bỏ
+                    if (rhyme.substring(len) in sharpCodas &&
+                        toneVal != 0 && toneVal != 1 && toneVal != 5
+                    ) continue
                     return true
+                }
             }
         }
         return false
     }
+
+    /** Kết quả transform không phải âm tiết VN hợp lệ -> chốt bằng phím thô
+     *  ("text/expect/window" về nguyên gõ — 1.3). */
+    fun restorable(raw: String, transformed: String): Boolean =
+        transformed != raw && !isValid(transformed.lowercase())
 }

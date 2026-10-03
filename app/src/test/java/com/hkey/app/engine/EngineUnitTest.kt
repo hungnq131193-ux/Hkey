@@ -1,6 +1,7 @@
 package com.hkey.app.engine
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -70,6 +71,51 @@ class EngineUnitTest {
         assertEquals("CƯƠI", telex.applyW("CUOI"))
         assertEquals("HOAN", telex.stripTones("HOÁN"))
         assertEquals("Hoan", telex.stripTones("Hoán"))
+    }
+
+    @Test
+    fun testToneCodaRule() {
+        // 1.3: âm tiết kết thúc c/ch/p/t chỉ nhận sắc hoặc nặng
+        assertTrue(ViSyllable.isValid("tét"))
+        assertTrue(ViSyllable.isValid("tẹt"))
+        assertTrue(ViSyllable.isValid("đặt"))
+        assertTrue(ViSyllable.isValid("sách"))
+        assertTrue(ViSyllable.isValid("sạch"))
+        assertFalse(ViSyllable.isValid("tẽt"))
+        assertFalse(ViSyllable.isValid("tèt"))
+        assertFalse(ViSyllable.isValid("xẻp"))
+        assertFalse(ViSyllable.isValid("cầp"))
+        assertTrue(ViSyllable.isValid("xẹp"))
+    }
+
+    @Test
+    fun testUndoByRetype() {
+        val telex = TelexEngine()
+        // 1.3: gõ lặp phím dấu phụ hủy mark về chữ thật
+        assertEquals("aa", telex.transform("aaa"))
+        assertEquals("dd", telex.transform("ddd"))
+        assertEquals("w", telex.transform("ww"))
+        assertEquals("ww", telex.transform("www"))
+        assertEquals("aw", telex.transform("aww"))
+        // Mark 2 phím vẫn hoạt động bình thường
+        assertEquals("â", telex.transform("aa"))
+        assertEquals("đ", telex.transform("dd"))
+        assertEquals("ư", telex.transform("w"))
+        // Chữ hoa giữ nguyên khi hủy
+        assertEquals("AA", telex.transform("AAA"))
+    }
+
+    @Test
+    fun testAutoRestoreRaw() {
+        // 1.3: kết quả không phải âm tiết VN -> chốt bằng phím thô
+        assertTrue(ViSyllable.restorable("text", "tẽt"))
+        assertTrue(ViSyllable.restorable("google", "gôgle"))
+        assertTrue(ViSyllable.restorable("www", "ưưư"))
+        assertTrue(ViSyllable.restorable("expect", "ẽpect"))
+        assertTrue(ViSyllable.restorable("TEXT", "TẼT"))
+        assertFalse(ViSyllable.restorable("duoc", "duọc"))
+        assertFalse(ViSyllable.restorable("nay", "nay"))
+        assertFalse(ViSyllable.restorable("DUOCJ", "DUỌC"))
     }
 
     @Test

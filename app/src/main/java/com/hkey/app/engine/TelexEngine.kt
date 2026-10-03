@@ -43,6 +43,11 @@ class TelexEngine {
     /** Cụm mở đặt dấu ở nguyên âm 2 theo kiểu mới: hoà, khoẻ, thuỷ. */
     private val secondVowelOpenClusters = setOf("oa", "oe", "uy")
 
+    /** Sentinel cho luật "gõ lặp hủy" (1.3): BREAK chặn gộp cặp literal,
+     *  W_LITERAL đứng thay 'w' thật để khỏi bị rule ư/aw/ow/uw ăn. */
+    private val MARK_BREAK = ''
+    private val W_LITERAL = ''
+
     /** Tách ký tự có dấu -> (nguyên âm gốc giữ dấu phụ, tone 0..5). */
     private val decompose: Map<Char, Pair<Char, Int>> = buildMap {
         for ((base, variants) in vowelBase) {
@@ -196,6 +201,40 @@ class TelexEngine {
             up = nup.copyOf(n)
         }
 
+        // Gõ lặp phím dấu phụ hủy về chữ thật: "aaa"->aa, "ddd"->dd,
+        // "ww"->w (1.3). BREAK ngăn cặp literal bị gộp lại; WLITERAL đứng
+        // thay 'w' để khỏi bị các rule w (ư/aw/ow/uw) ăn mất.
+        run {
+            val sb = StringBuilder(text.length + 4)
+            val nup = BooleanArray(text.length + 4)
+            var n = 0
+            var i = 0
+            while (i < text.length) {
+                val c = text[i]
+                var j = i + 1
+                while (j < text.length && text[j] == c) j++
+                val run = j - i
+                if (c == 'w' && run >= 2) {
+                    repeat(run - 1) { k -> sb.append(W_LITERAL); nup[n] = up[i + k]; n++ }
+                } else if (c in "aeod" && run >= 3) {
+                    var left = run
+                    var k = i
+                    while (left >= 3) {
+                        nup[n] = up[k]; sb.append(c); n++
+                        sb.append(MARK_BREAK); nup[n] = false; n++ // giữ chỗ trong mask
+                        nup[n] = up[k + 1]; sb.append(c); n++
+                        k += 3; left -= 3
+                    }
+                    repeat(left) { t -> nup[n] = up[k + t]; sb.append(c); n++ }
+                } else {
+                    repeat(run) { t -> nup[n] = up[i + t]; sb.append(c); n++ }
+                }
+                i = j
+            }
+            text = sb.toString()
+            up = nup.copyOf(n)
+        }
+
         replaceMasked(text, up, "dd", "đ").let { text = it.first; up = it.second }
         replaceMasked(text, up, "aa", "â").let { text = it.first; up = it.second }
         replaceMasked(text, up, "ee", "ê").let { text = it.first; up = it.second }
@@ -220,6 +259,22 @@ class TelexEngine {
                     text = text.substring(0, i) + accented + text.substring(i + 1)
                 }
             }
+        }
+
+        // Dọn sentinel sau khi mọi phép thay đã xong (1.3)
+        if (text.indexOf(MARK_BREAK) >= 0 || text.indexOf(W_LITERAL) >= 0) {
+            val sb = StringBuilder(text.length)
+            val nup = BooleanArray(text.length)
+            var m = 0
+            for (i in text.indices) {
+                when (text[i]) {
+                    MARK_BREAK -> Unit
+                    W_LITERAL -> { sb.append('w'); nup[m] = up[i]; m++ }
+                    else -> { sb.append(text[i]); nup[m] = up[i]; m++ }
+                }
+            }
+            text = sb.toString()
+            up = nup.copyOf(m)
         }
 
         if (!up.any { it }) return text

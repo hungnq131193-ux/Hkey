@@ -23,6 +23,7 @@ import com.hkey.app.engine.LearningStore
 import com.hkey.app.engine.TelexEngine
 import com.hkey.app.engine.TextContext
 import com.hkey.app.engine.ViModel
+import com.hkey.app.engine.ViSyllable
 import java.io.File
 
 class HKeyIME : InputMethodService() {
@@ -518,12 +519,14 @@ class HKeyIME : InputMethodService() {
         // 3.5: không sửa từ viết hoa giữa câu (tên riêng); từ có số và từ
         // ngắn đã chặn trong correction().
         val isProperNoun = prev.isNotEmpty() && typed.any { it.isUpperCase() }
+        // 1.3: kết quả không phải âm tiết VN (tiếng Anh/mã/URL) -> về phím thô
+        val typedWord = if (ViSyllable.restorable(raw, typed)) raw else typed
         // 1.1: mảng trong url/email/ip ("io" trong "hu.io.vn") không sửa, không học.
-        val fixed = if (isProperNoun || tokenGlued) null
+        val fixed = if (isProperNoun || tokenGlued || typedWord === raw) null
             else predictor.correction(typed, prev, prev2)
             // 1.2: bản sửa trả chữ thường — áp lại kiểu hoa của từ đã gõ
             ?.let { TextContext.matchCase(typed, it) }
-        val word = fixed ?: typed
+        val word = fixed ?: typedWord
         currentInputConnection?.commitText(word, 1)
         if (!tokenGlued) {
             predictor.recordSequence(prev, word)
@@ -684,8 +687,12 @@ class HKeyIME : InputMethodService() {
             // 1.1: mảng trong url/email/ip -> không gợi ý, không sửa
             val completions = if (tokenGlued) emptyList()
                 else predictor.completions(current, ctx, ctx2)
+            // 1.3: kết quả không phải âm tiết VN -> đề nghị phím thô ("text")
+            val restore = if (tokenGlued) null else currentComposingWord.toString()
+                .takeIf { ViSyllable.restorable(it, current) }
             // 3.4: chỉ đề nghị sửa khi từ đang gõ không phải tiền tố hợp lệ
-            val fix = if (tokenGlued || predictor.isPrefixOfKnownWord(current)) null
+            val fix = restore
+                ?: if (tokenGlued || predictor.isPrefixOfKnownWord(current)) null
                 else predictor.correction(current, ctx, ctx2)
             // 1.2: hiện gợi ý đúng kiểu hoa để chạm vào ăn ngay
             candidate1?.text = completions.getOrNull(0)

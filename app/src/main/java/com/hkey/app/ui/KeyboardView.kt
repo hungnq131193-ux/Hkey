@@ -23,9 +23,10 @@ class KbKey(
     val w: Float = 1f,
     val func: Boolean = false,
     val alts: String = "",
-    val longTag: String? = null, // nhấn giữ -> bắn phím khác (vd giữ 😊 -> đổi IME)
+    val longTag: String? = null, // nhấn giữ -> bắn phím khác (vd giữ VI -> đổi IME)
     val repeat: Boolean = false, // ⌫ giữ là xóa liên tục
-    val swipe: Boolean = false   // space: vuốt ngang = dời con trỏ
+    val swipe: Boolean = false,  // space: vuốt ngang = dời con trỏ
+    val mini: String? = null     // icon nhỏ góc phải-trên (vd 😊 trên phím ,)
 )
 
 class KbRow(val keys: List<KbKey>, val indent: Float = 0f)
@@ -37,10 +38,10 @@ object KbLayouts {
     private fun bottom(modeTag: String, modeLabel: String) = KbRow(
         listOf(
             KbKey(modeTag, modeLabel, 1.2f, func = true),
-            p(",", "!?"),
-            KbKey("fn:emoji", "😊", func = true, longTag = "fn:ime"), // giữ 😊 -> đổi IME
-            KbKey("fn:lang", "VI", 1.1f, func = true),
-            KbKey("fn:space", "HKey", 2.6f, swipe = true),
+            // giữ , -> trang emoji (icon 😊 góc); !? của , đã nằm trong alts của .
+            KbKey("p:,", ",", longTag = "fn:emoji", mini = "😊"),
+            KbKey("fn:lang", "VI", 1.1f, func = true, longTag = "fn:ime"), // giữ -> đổi IME
+            KbKey("fn:space", "HKey", 4.0f, swipe = true),
             p(".", "!?,:;'\""),
             KbKey("fn:enter", "↵", 1.5f, func = true)
         )
@@ -301,6 +302,11 @@ class KeyboardView(context: Context) : View(context) {
             }
             val ty = a.draw.centerY() - (txtPaint.descent() + txtPaint.ascent()) / 2
             c.drawText(labelOf(a.key), a.draw.centerX(), ty, txtPaint)
+            a.key.mini?.let { m -> // icon nhỏ góc phải-trên (giữ phím -> chức năng)
+                txtPaint.color = palette.dim
+                txtPaint.textSize = scaledDensity * 11f
+                c.drawText(m, a.draw.right - 7 * density, a.draw.top + 13 * density, txtPaint)
+            }
         }
         drawPreview(c)
         drawAltStrip(c)

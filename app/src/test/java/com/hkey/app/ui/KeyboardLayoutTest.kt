@@ -1,6 +1,7 @@
 package com.hkey.app.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,16 +25,20 @@ class KeyboardLayoutTest {
     fun lettersHasCoreKeys() {
         val keys = allKeys(KbLayouts.letters(false))
         val tags = keys.map { it.tag }
-        for (t in listOf("fn:shift", "fn:del", "fn:space", "fn:enter", "fn:lang", "fn:emoji", "fn:sym")) {
+        for (t in listOf("fn:shift", "fn:del", "fn:space", "fn:enter", "fn:lang", "fn:sym")) {
             assertTrue("thiếu $t", t in tags)
         }
         // 26 chữ cái
         assertEquals(26, tags.count { it.startsWith("ch:") })
-        // space vuốt được, del lặp được
+        // space vuốt được + rộng ~4.0 sau khi gộp emoji vào phím ,
         assertTrue(keys.first { it.tag == "fn:space" }.swipe)
+        assertEquals(4.0f, keys.first { it.tag == "fn:space" }.w, 0.001f)
         assertTrue(keys.first { it.tag == "fn:del" }.repeat)
-        // giữ phím emoji -> đổi IME
-        assertEquals("fn:ime", keys.first { it.tag == "fn:emoji" }.longTag)
+        // giữ phím , -> trang emoji (kèm icon mini 😊); giữ VI/EN -> đổi IME
+        assertFalse("fn:emoji không còn là phím riêng", "fn:emoji" in tags)
+        assertEquals("fn:emoji", keys.first { it.tag == "p:," }.longTag)
+        assertEquals("😊", keys.first { it.tag == "p:," }.mini)
+        assertEquals("fn:ime", keys.first { it.tag == "fn:lang" }.longTag)
     }
 
     @Test

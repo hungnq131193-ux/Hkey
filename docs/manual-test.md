@@ -2,6 +2,20 @@
 
 Chạy sau mỗi giai đoạn, trước khi chuyển giai đoạn tiếp theo.
 
+## Sửa 1.1.1 — kiểm tra riêng
+- **⌫ xoá:** chạm-nhả ⌫ = xoá đúng 1 ký tự; giữ = xoá liên tục, dừng ngay
+  khi nhả hoặc trượt sang phím khác (không xoá vô hạn).
+- **Phím nổi:** bong bóng hiện đúng ngay trên phím đang bấm, kể cả hàng trên
+  cùng (tràn lên thanh gợi ý) — trên máy Android 15 edge-to-edge.
+- **Rung/âm:** tắt rung trong HKey → quay lại gõ: không rung kể cả nhấn giữ
+  phím có ký tự phụ. Bật lại thì rung ngay, không cần restart.
+- **Hàng phím dưới:** bấm `,` ra dấu phẩy; giữ `,` mở trang emoji (icon 😊
+  góc phím); giữ `VI`/`EN` đổi IME; space rộng hơn, không đè phím kề.
+- **Emoji:** chọn 1 emoji → tự về trang chữ; không thấy phím "ma" khi đang
+  giữ nhiều ngón mà đổi trang.
+- **Dải phụ:** nhấn giữ `e` → dải `3 ê` hiện trên phím, trượt chọn, nhả ra
+  ký tự đúng.
+
 ## Gõ tiếng Việt cơ bản
 - App nhắn tin/Zalo: gõ câu dài có dấu, có `dd`, `w`, `z` (vd "đường", "hơn", "hoasz"→"hoas").
 

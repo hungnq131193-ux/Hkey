@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.1.1 (versionCode 13)
+
+Sửa theo review code 1.1.0 — mỗi lỗi một commit, có thể revert riêng:
+
+- **⌫ xoá đúp 2–3 lần:** phím lặp bắn thêm khi nhả ngón và repeater không
+  dừng khi trượt tay khỏi ⌫. Tách logic chạm phím ra `KeyTouchState` thuần
+  Kotlin — test JVM bằng `KeyTouchStateTest` (chạm-nhả = 1, giữ = lặp đúng
+  nhịp, trượt/cancel = dừng).
+- **Phím nổi hiện sai chỗ:** bỏ PopupWindow dùng `getLocationOnScreen`
+  (lệch dưới edge-to-edge targetSdk 35); bong bóng và dải ký tự phụ giờ vẽ
+  trong `onDraw` của KeyboardView, hàng trên tràn lên thanh gợi ý. Ít IPC
+  WindowManager mỗi lần gõ.
+- **Tắt rung vẫn rung:** cờ âm thanh/rung đẩy xuống view mỗi lần bàn phím
+  hiện (kể cả khi view tái sử dụng); rung nhấn giữ theo cờ.
+- **Emoji gộp vào phím `,`:** hàng dưới `?123 | , | VI | Space | . | ↵` —
+  giữ `,` mở emoji (icon 😊 góc phím), đổi IME chuyển sang giữ VI/EN, space
+  rộng 2.6 → 4.0.
+- **Chọn emoji xong tự về trang chữ**; đổi trang dọn sạch chạm đa điểm đang
+  dở (không còn phím "ma").
+- **Nhanh hơn:** mỗi phím chỉ ~1 lệnh đồng bộ sang app đích (bản sao cục bộ
+  40 ký tự cuối `TailTracker`, đọc lại chỉ khi con trỏ đổi từ ngoài); cache
+  trạng thái TalkBack thay vì hỏi mỗi MotionEvent; chỉ vẽ lại vùng phím đổi;
+  gợi ý gom một lần mỗi frame; chỉ dựng lại engine/macro khi đổi cài đặt.
+
+## 1.1.0 (versionCode 12)
+
+Bản lớn nhiều giai đoạn (được tag từ nhánh `fix/phase1-p0`):
+
+- **Sửa nhanh (1.1–1.10):** "." chỉ kết câu khi có khoảng trắng theo sau
+  ("hu.io.vn" không bật hoa/sửa); giữ kiểu hoa từng ký tự ("USA" không về
+  "Usa"); Telex không phá tiếng Anh/URL — restore phím thô + huỷ bằng gõ
+  lặp; cờ NO_SUGGESTIONS không còn tắt Telex; Enter gọi action ô (send/
+  search/go); ⌫ xoá theo ký tự hiển thị; resume giữ dấu sẵn có; build fail
+  rõ khi thiếu secret ký; sửa nhóm lỗi học/repeat/inset/landscape.
+- **Kiểu gõ (2.x):** VNI / Simple / Quick Telex, kiểu dấu cũ-mới, spell-check,
+  macro gõ tắt, phím EN/VI.
+- **Bàn phím tự vẽ (3.x):** một View duy nhất — hit theo ô không rớt khe,
+  trượt ngón đổi phím, đa chạm, nhấn giữ ra ký tự phụ, giữ ⌫ lặp xoá, vuốt
+  space dời con trỏ, TalkBack qua node ảo, thanh candidate theo theme.
+- **Model nhị phân (4.x):** `vi_model.bin` đọc mmap không parse string;
+  từ điển sạch + từ ghép; học đúng kiểu hoa; không xẻ đôi surrogate emoji.
+- **Build (5.x):** R8 + shrinkResources cho release.
+
 ## 1.0.10 (versionCode 11)
 
 Sửa theo review model v1.0.9:

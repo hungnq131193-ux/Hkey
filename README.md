@@ -17,7 +17,7 @@ HKey là bàn phím tiếng Việt mã nguồn mở nhẹ, bảo mật và thôn
 - **Xoá dữ liệu học:** Mở app HKey → mục "Quyền riêng tư" → nút **Xóa dữ liệu học**.
 
 ## Dữ liệu mô hình
-Mô hình ngôn ngữ (`res/raw/vi_model.gz`) được thống kê từ nội dung Wikipedia tiếng Việt, phát hành theo giấy phép [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/deed.vi). Chỉ chứa tần suất từ/cụm từ, không chứa nội dung bài viết. Công cụ sinh: `tools/build_model.py`.
+Mô hình ngôn ngữ (`res/raw/vi_model.bin`) được thống kê từ nội dung Wikipedia tiếng Việt, phát hành theo giấy phép [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/deed.vi). Chỉ chứa tần suất từ/cụm từ, không chứa nội dung bài viết. Công cụ sinh: `tools/build_model.py`.
 
 ## Cài đặt & Build
 - Tải file APK mới nhất tại tab [Releases](https://github.com/hungnq131193-ux/HKey/releases).

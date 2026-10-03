@@ -2,21 +2,16 @@ package com.hkey.app.ui
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.SoundEffectConstants
 import android.view.View
 import android.view.accessibility.AccessibilityEvent
-import android.widget.LinearLayout
-import android.widget.PopupWindow
-import android.widget.TextView
 import androidx.customview.widget.ExploreByTouchHelper
 
 /** Phím logic: tag "ch:x" (chữ -> engine), "p:x" (dấu/số -> punct),
@@ -172,14 +167,17 @@ class KeyboardView(context: Context) : View(context) {
 
     // Quyết định bắn phím/lặp ở lớp thuần KeyTouchState (test JVM được).
     private val touch = KeyTouchState()
-    private var altStrip: PopupWindow? = null
+    // Preview + dải ký tự phụ vẽ trong onDraw (bỏ PopupWindow): toạ độ trong
+    // view, hàng trên tràn lên thanh gợi ý nhờ clipChildren=false.
     private var altOwner = -1
-    private var altCells = listOf<TextView>()
     private var altSel = -1
-    private var preview: PopupWindow? = null
-    private var previewTv: TextView? = null
+    private var altAnchor: Area? = null
+    private var altChars = listOf<Char>()
+    private var previewArea: Area? = null
+    private var topRoomPx = 0 // chỗ trống phía trên view còn trong cửa sổ IME
 
     private val density = resources.displayMetrics.density
+    private val scaledDensity = resources.displayMetrics.scaledDensity
     private val marginH = 2.5f * density
     private val marginV = 3f * density
     private val padV = 4f * density
@@ -253,6 +251,10 @@ class KeyboardView(context: Context) : View(context) {
             if (a.hit.top < padV + marginV) a.hit.top = 0f
             if (a.hit.bottom > height - padV - marginV) a.hit.bottom = height.toFloat()
         }
+        // Khoảng trống phía trên view trong CỬA SỔ (getLocationInWindow —
+        // không lệch edge-to-edge như getLocationOnScreen): bong bóng phím
+        // được tràn lên thanh gợi ý nhưng không vượt đỉnh cửa sổ.
+        topRoomPx = IntArray(2).also { getLocationInWindow(it) }[1]
     }
 
     private fun labelOf(k: KbKey): String = when {
@@ -300,6 +302,65 @@ class KeyboardView(context: Context) : View(context) {
             val ty = a.draw.centerY() - (txtPaint.descent() + txtPaint.ascent()) / 2
             c.drawText(labelOf(a.key), a.draw.centerX(), ty, txtPaint)
         }
+        drawPreview(c)
+        drawAltStrip(c)
+    }
+
+    /** Bong bóng phím nổi trên phím đang bấm; hàng trên tràn lên thanh gợi ý
+     *  (y âm vẫn trong cửa sổ IME). */
+    private fun drawPreview(c: Canvas) {
+        val a = previewArea ?: return
+        val pw = maxOf(a.draw.width() * 1.5f, 44 * density)
+        val ph = keyHeightPx * 1.4f
+        val cx = a.draw.centerX().coerceIn(pw / 2, width - pw / 2)
+        val top = (a.draw.top - ph - 4 * density).coerceAtLeast(-topRoomPx.toFloat())
+        keyPaint.color = palette.popupBg
+        c.drawRoundRect(RectF(cx - pw / 2, top, cx + pw / 2, top + ph), corner, corner, keyPaint)
+        txtPaint.color = palette.text
+        txtPaint.textSize = 26 * scaledDensity
+        val ty = top + ph / 2 - (txtPaint.descent() + txtPaint.ascent()) / 2
+        c.drawText(labelOf(a.key), cx, ty, txtPaint)
+    }
+
+    /** Toạ độ dải ký tự phụ (long-press) trong view — dùng chung cho vẽ và
+     *  đổi ô chọn khi trượt ngón. */
+    private fun altStripRect(): RectF? {
+        val a = altAnchor ?: return null
+        if (altChars.isEmpty()) return null
+        val w = 40 * density * altChars.size + 8 * density
+        val h = 56 * density
+        val left = (a.draw.centerX() - w / 2).coerceIn(0f, width - w)
+        val top = (a.draw.top - h).coerceAtLeast(-topRoomPx.toFloat())
+        return RectF(left, top, left + w, top + h)
+    }
+
+    private fun drawAltStrip(c: Canvas) {
+        val r = altStripRect() ?: return
+        keyPaint.color = palette.popupBg
+        c.drawRoundRect(r, corner, corner, keyPaint)
+        val cw = 40 * density
+        val pad = 4 * density
+        txtPaint.color = palette.text
+        txtPaint.textSize = 19 * scaledDensity
+        altChars.forEachIndexed { i, ch ->
+            val cellL = r.left + pad + cw * i
+            if (i == altSel) {
+                keyPaint.color = palette.keyPressed
+                c.drawRect(cellL, r.top + pad, cellL + cw, r.bottom - pad, keyPaint)
+            }
+            val ty = r.centerY() - (txtPaint.descent() + txtPaint.ascent()) / 2
+            c.drawText(ch.toString(), cellL + cw / 2, ty, txtPaint)
+        }
+    }
+
+    /** Bong bóng/dải phụ tràn khỏi bounds view -> invalidate cả chuỗi cha để
+     *  vùng thanh gợi ý được vẽ lại (clipChildren=false ở layout). */
+    private fun invalidateOverlay() {
+        var v: View? = this
+        while (v != null) {
+            v.invalidate()
+            v = v.parent as? View
+        }
     }
 
     private fun feed(k: KbKey) {
@@ -309,44 +370,27 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     private fun hidePreview() {
-        preview?.dismiss()
-        preview = null
+        if (previewArea == null) return
+        previewArea = null
+        invalidateOverlay()
     }
 
     private fun showPreview(a: Area) {
         if (a.key.func || a.key.tag == "fn:space") { hidePreview(); return }
-        val label = labelOf(a.key)
-        if (preview == null) {
-            val tv = TextView(context).apply {
-                gravity = Gravity.CENTER
-                textSize = 26f
-            }
-            previewTv = tv
-            preview = PopupWindow(tv, 0, 0, false)
-        }
-        val tv = previewTv!!
-        val pw = (a.draw.width() * 1.5f).toInt().coerceAtLeast((44 * density).toInt())
-        val ph = (keyHeightPx * 1.4f).toInt()
-        tv.text = label
-        tv.setTextColor(palette.text)
-        tv.setBackgroundColor(palette.popupBg)
-        preview!!.width = pw
-        preview!!.height = ph
-        val loc = IntArray(2).also { getLocationOnScreen(it) }
-        val x = (loc[0] + a.draw.centerX() - pw / 2).toInt()
-            .coerceIn(0, resources.displayMetrics.widthPixels - pw)
-        val y = (loc[1] + a.draw.top - ph - 4 * density).toInt().coerceAtLeast(0)
-        if (preview!!.isShowing) preview!!.update(x, y, pw, ph)
-        else preview!!.showAtLocation(this, Gravity.NO_GRAVITY, x, y)
+        if (previewArea === a) return
+        previewArea = a
+        invalidateOverlay()
     }
 
     private fun areaOf(k: KbKey): Area? = areas.firstOrNull { it.key === k }
 
     private fun hideAlts() {
-        altStrip?.dismiss()
-        altStrip = null
+        if (altAnchor == null && altChars.isEmpty()) return
+        altAnchor = null
+        altChars = emptyList()
         altOwner = -1
         altSel = -1
+        invalidateOverlay()
     }
 
     private fun fireLongPress() {
@@ -360,58 +404,27 @@ class KeyboardView(context: Context) : View(context) {
         if (k.alts.isEmpty()) return
         val a = areaOf(k) ?: return
         touch.consumed += lpPid
-        val strip = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(palette.popupBg)
-            setPadding((4 * density).toInt(), (4 * density).toInt(),
-                (4 * density).toInt(), (4 * density).toInt())
-        }
-        val cw = (40 * density).toInt()
-        altCells = k.alts.map { ch ->
-            TextView(context).apply {
-                text = ch.toString()
-                textSize = 19f
-                gravity = Gravity.CENTER
-                setTextColor(palette.text)
-                layoutParams = LinearLayout.LayoutParams(cw, (48 * density).toInt())
-            }.also { strip.addView(it) }
-        }
+        altAnchor = a
+        altChars = k.alts.toList()
         altSel = 0
-        altCells[0].setBackgroundColor(palette.keyPressed)
-        altStrip = PopupWindow(strip, LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT, false)
-        val loc = IntArray(2).also { getLocationOnScreen(it) }
-        val stripW = cw * altCells.size + (8 * density).toInt()
-        val x = (loc[0] + a.draw.centerX() - stripW / 2).toInt()
-            .coerceIn(0, resources.displayMetrics.widthPixels - stripW)
-        val y = (loc[1] + a.draw.top - 56 * density).toInt().coerceAtLeast(0)
-        altStrip!!.contentView.measure(
-            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
-            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-        )
-        altStrip!!.showAtLocation(this, Gravity.NO_GRAVITY, x, y)
         altOwner = lpPid
+        hidePreview() // dải phụ thay bong bóng
+        invalidateOverlay()
         performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
     }
 
     private fun updateAltSel(x: Float) {
-        val strip = altStrip ?: return
-        if (altCells.isEmpty()) return
-        val loc = IntArray(2).also { getLocationOnScreen(it) }
-        val stripLoc = IntArray(2).also { strip.contentView.getLocationOnScreen(it) }
-        val rel = loc[0] + x - stripLoc[0] - 4 * density
-        val cw = 40 * density
-        val idx = (rel / cw).toInt().coerceIn(0, altCells.size - 1)
+        val r = altStripRect() ?: return
+        val idx = ((x - r.left - 4 * density) / (40 * density)).toInt()
+            .coerceIn(0, altChars.size - 1)
         if (idx != altSel) {
             altSel = idx
-            altCells.forEachIndexed { i, tv ->
-                tv.setBackgroundColor(if (i == idx) palette.keyPressed else Color.TRANSPARENT)
-            }
+            invalidateOverlay()
         }
     }
 
     private fun commitAlt(pid: Int, k: KbKey?): Boolean {
-        if (altStrip == null || altOwner != pid) return false
+        if (altAnchor == null || altOwner != pid) return false
         if (k != null && altSel in k.alts.indices) {
             feed(KbKey("tx:${k.alts[altSel]}", k.alts[altSel].toString()))
         }

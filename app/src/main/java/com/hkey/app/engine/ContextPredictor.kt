@@ -868,8 +868,12 @@ class ContextPredictor {
         if (word.length < 3 || word.any { !it.isLetter() }) return null
         // Từ không có dạng âm tiết VN (tiếng Anh, mã, URL…) không bao giờ sửa;
         // trừ typo gõ thừa phím lặp ("nayy" gom về "nay" vẫn là âm tiết VN).
-        if (!ViSyllable.isValid(word) && !ViSyllable.isValid(dedupLetters(word)))
-            return null
+        // 1.3.4: isValid siết dấu phụ -> cổng so trên dạng bỏ dấu phụ để typo
+        // đặt lệch mũ/móc ("ngưòi") vẫn qua cổng; tiếng Anh không có dấu phụ
+        // nên bị chặn y như cũ.
+        if (!ViSyllable.isValid(deaccent(word)) &&
+            !ViSyllable.isValid(deaccent(dedupLetters(word)))
+        ) return null
         if (vocabulary.containsKey(word)) return null
         val p1 = previousWord?.lowercase()?.trim() ?: ""
         val p2 = beforePrev?.lowercase()?.trim() ?: ""

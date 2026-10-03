@@ -126,6 +126,34 @@ class TelexRoundTripTest {
         )
     }
 
+    /** 1.3.4 — isValid giữ mũ/móc: mọi từ VN trong từ điển phải còn hợp lệ;
+     *  tập từ không hợp lệ cố định = tiếng Anh giữ lại + 4 mục rác
+     *  (nêông, nôen, â, ă). Thêm từ mới bị tụt -> sửa ViSyllable, không
+     *  được sửa danh sách này. */
+    @Test
+    fun dictionaryWordsStayValid() {
+        val knownInvalid = setOf(
+            "admin", "ads", "aids", "android", "app", "apps", "bluetooth",
+            "btc", "bug", "camera", "code", "covid", "cpu", "cv", "deal",
+            "dev", "eth", "fan", "flu", "freeship", "game", "gpu", "hdd",
+            "hiv", "hp", "hr", "inbox", "internet", "ipad", "iphone",
+            "laptop", "like", "link", "links", "livestream", "login",
+            "logout", "macbook", "messenger", "modem", "nokia", "nêông",
+            "nôen", "offline", "online", "oppo", "otp", "pr", "sale",
+            "samsung", "selfie", "share", "shop", "ssd", "story", "team",
+            "telegram", "tiktok", "usb", "usd", "video", "virus", "visa",
+            "vivo", "voucher", "web", "website", "wifi", "xiaomi",
+            "youtube", "zalo", "â", "ă"
+        )
+        val invalid = dictFile().readLines()
+            .map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+            .filter { !isVietnameseSyllable(it) }
+        assertEquals(
+            "từ từ điển bị isValid tụt ngoài danh sách cho phép",
+            knownInvalid, invalid.toSet()
+        )
+    }
+
     /** 2.4 — phát hiện khoá trùng trong bigramModel (G6). */
     @Test
     fun noDuplicateBigramKeys() {

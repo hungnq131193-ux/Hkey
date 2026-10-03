@@ -138,6 +138,45 @@ class EngineUnitTest {
     }
 
     @Test
+    fun testMarkedVowelsMustMatch() {
+        // 1.3.4: dấu phụ (ă â ê ô ơ ư) phải khớp vần VN thật — trước đây
+        // isValid bỏ qua dấu phụ nên "neư" trôi qua như "neu", tiếng Anh
+        // bị đổi mà không khôi phục được (new->neư, view->vieư...)
+        assertTrue(ViSyllable.restorable("new", "neư"))
+        assertTrue(ViSyllable.restorable("view", "vieư"))
+        assertTrue(ViSyllable.restorable("news", "neứ"))
+        assertTrue(ViSyllable.restorable("power", "pởe"))
+        assertTrue(ViSyllable.restorable("tower", "tởe"))
+        assertTrue(ViSyllable.restorable("law", "lă"))
+        assertTrue(ViSyllable.restorable("saw", "să"))
+        assertTrue(ViSyllable.restorable("show", "shơ"))
+        // "hơ" vẫn là âm tiết hợp lệ — how/now/low không phân biệt được
+        assertFalse(ViSyllable.restorable("how", "hơ"))
+        // Gõ lười vẫn ăn: "duocj" -> "duọc" giữ nguyên
+        assertFalse(ViSyllable.restorable("duocj", "duọc"))
+        // Vần mang dấu phụ hợp lệ vẫn nhận
+        for (w in listOf(
+            "được", "muộn", "xuân", "tuyến", "hương", "xoăn", "khuây",
+            "huơ", "yên", "boong", "nếu", "cuăng", "trường", "rượu",
+            "người", "câu", "mây", "tôi", "chơi", "huế", "mưa", "gửi",
+            "hữu", "kiểu", "yêu", "muối", "tươi", "xoây", "ăn", "ân"
+        )) {
+            assertTrue("$w phải là âm tiết hợp lệ", ViSyllable.isValid(w))
+        }
+        // ă â iê oă uă uâ uô uyê ươ bắt buộc phụ âm cuối
+        assertFalse(ViSyllable.isValid("ă"))
+        assertFalse(ViSyllable.isValid("â"))
+        assertFalse(ViSyllable.isValid("muô")) // "muôn" mới hợp lệ
+        assertFalse(ViSyllable.isValid("hươ")) // dạng mở là "ưa"
+        assertFalse(ViSyllable.isValid("tuyê")) // "tuyến"/"tuyệt" mới hợp lệ
+        assertFalse(ViSyllable.isValid("iế"))  // dạng mở là "ia"
+        assertFalse(ViSyllable.isValid("cuă")) // "cuăng"/"cuăn" mới hợp lệ
+        // Vần không tồn tại
+        assertFalse(ViSyllable.isValid("nêông"))
+        assertFalse(ViSyllable.isValid("nôen"))
+    }
+
+    @Test
     fun testTonePlacementModern() {
         val telex = TelexEngine()
         // 2 nguyên âm + phụ âm cuối -> dấu ở nguyên âm 2

@@ -114,7 +114,10 @@ class VniEngine(
                 // Chỉ số dấu — số dấu phụ (đ/â/ơ) không revert ("d9"->"đ").
                 // Kiểm trên text ĐÃ bỏ số ("á1" bản thân số làm isValid sai).
                 if (opts.spellCheckTone && d in '1'..'5' && i == text.length - 1 &&
-                    !ViSyllable.isValid(text.removeRange(i, i + 1).lowercase())
+                    // 1.3.4: non-strict như TelexEngine — "việ" gõ dở vẫn ăn dấu
+                    !ViSyllable.isValid(
+                        text.removeRange(i, i + 1).lowercase(), strict = false
+                    )
                 ) {
                     text = saved
                     i++

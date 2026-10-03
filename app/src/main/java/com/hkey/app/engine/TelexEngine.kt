@@ -142,7 +142,9 @@ class TelexEngine(
         // Chỉ xét phím CUỐI để không phá ký tự dấu giữa buffer ("dasng").
         if (opts.spellCheckTone && input.length >= 2 &&
             isToneCommand(input.lowercase(), input.length - 1) &&
-            !ViSyllable.isValid(out.lowercase())
+            // 1.3.4: non-strict — vần chỉ-đóng đứng trần ("việ") là trạng
+            // thái gõ dở hợp lệ, không in phím dấu thô
+            !ViSyllable.isValid(out.lowercase(), strict = false)
         ) {
             return transformInternal(input, true)
         }

@@ -242,6 +242,11 @@ class EngineUnitTest {
         assertEquals("tiên", telex.transform("tiene"))
         assertEquals("tuân", telex.transform("tuana"))
         assertEquals("duôn", telex.transform("duono"))
+        // Phím thanh đứng ngay trước phím đúp cuối cũng là dấu
+        // ("tiengs" + 'e' -> "tiếng")
+        assertEquals("tiếng", telex.transform("tiengse"))
+        assertEquals("tiềng", telex.transform("tiengfe"))
+        assertEquals("tiệng", telex.transform("tiengje"))
         // Nguyên âm đơn lẻ giữa phụ âm không bẻ -> tiếng Anh giữ nguyên
         assertEquals("data", telex.transform("data"))
         assertEquals("delete", telex.transform("delete"))

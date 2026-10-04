@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.4 (versionCode 24)
+
+- Phím thanh đứng ngay trước phím đúp cuối cũng tính là dấu: gõ
+  "tiengs" (ra "tiéng") rồi bấm 'e' giờ đúng ra "tiếng" — trước đây
+  's' đứng trước 'e' bị hiểu là chữ thật nên từ hỏng. Tương tự
+  'f'/'r'/'x'/'j': "tiengfe"→"tiềng", "tiengje"→"tiệng".
+
 ## 1.4.3 (versionCode 23)
 
 - 'a'/'e'/'o' cuối từ sau phụ âm bẻ dấu phụ ngược lên nguyên âm cùng

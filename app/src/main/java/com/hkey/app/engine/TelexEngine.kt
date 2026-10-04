@@ -357,13 +357,26 @@ class TelexEngine(
         // 'a'/'e'/'o' cuối sau phụ âm -> đúp nguyên âm cùng loại đứng kề một
         // nguyên âm khác ("tienge" -> "tiêng", "khuyana" -> "khuyân") —
         // nguyên âm đơn lẻ giữa phụ âm là chữ thật ("data", "delete" giữ
-        // nguyên). Simple Telex không có aa/ee/oo -> không bẻ.
+        // nguyên). Phím thanh đứng ngay trước phím đúp cũng là dấu
+        // ("tiengse" = "tieng" + 's' + 'e'). Simple Telex không có
+        // aa/ee/oo -> không bẻ.
         if (opts.method != ImeMethod.TELEX_SIMPLE && text.length > 1 &&
-            text.last() in "aeo" && !ViTone.isVowelChar(text[text.length - 2])
+            text.last() in "aeo"
         ) {
-            applyRetroDouble(text.dropLast(1), text.last())?.let {
-                text = it
-                up = up.copyOf(text.length)
+            var word = text.dropLast(1)
+            var t2 = 0
+            if (toneMap.containsKey(word.last()) &&
+                ViTone.vowelBefore(word, word.length - 1)
+            ) {
+                t2 = toneMap.getValue(word.last())
+                word = word.dropLast(1)
+            }
+            if (word.isNotEmpty() && !ViTone.isVowelChar(word.last())) {
+                applyRetroDouble(word, text.last())?.let {
+                    text = it
+                    up = up.copyOf(text.length)
+                    if (t2 > 0) toneIdx = t2
+                }
             }
         }
         replaceMasked(text, up, "w", "ư").let { text = it.first; up = it.second }

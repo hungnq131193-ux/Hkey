@@ -44,14 +44,20 @@ class TelexEngine(
 
     /**
      * Bẻ dấu 'w' lên từ đã có dấu/chữ (bỏ dấu từ xa, hoặc 'w' gõ sau phụ âm
-     * cuối): "uo" không sau q -> "ươ"; nguyên âm cuối a/o/u -> ă/ơ/ư, giữ tone
-     * và kiểu hoa của ký tự bị đổi (1.2).
+     * cuối): "uo" không sau q -> "ươ" (1.4.0: "uo" cuối từ -> "uơ" giữ 'u');
+     * nguyên âm cuối a/o/u -> ă/ơ/ư, giữ tone và kiểu hoa của ký tự bị đổi (1.2).
      */
     override fun applyW(word: String): String? {
         for (i in word.length - 2 downTo 0) {
             if (decomposed(word[i]).first == 'u' && decomposed(word[i + 1]).first == 'o' &&
                 !(i > 0 && word[i - 1].lowercaseChar() == 'q')
             ) {
+                // 1.4.0 (A4): không còn ký tự sau "uo" -> "uơ" giữ 'u'
+                if (i + 2 == word.length) {
+                    val o = vowelBase.getValue('ơ')[decomposed(word[i + 1]).second]
+                    return word.substring(0, i + 1) +
+                        (if (word[i + 1].isUpperCase()) o.uppercase() else o)
+                }
                 val u = vowelBase.getValue('ư')[decomposed(word[i]).second]
                 val o = vowelBase.getValue('ơ')[decomposed(word[i + 1]).second]
                 return word.substring(0, i) +
@@ -73,7 +79,9 @@ class TelexEngine(
     }
 
     /** "uow" -> "ươ" phải chạy trước rule "ow"/"uw"; 'u' sau 'q' là phụ âm.
-     *  Mask: ư lấy hoa của 'u', ơ lấy hoa của 'o'/'w' (1.2). */
+     *  Mask: ư lấy hoa của 'u', ơ lấy hoa của 'o'/'w' (1.2).
+     *  1.4.0 (A4): "uow" không còn gì đi sau -> chỉ bẻ "ow"->ơ giữ 'u'
+     *  ("thuow"->"thuơ"); có coda/nguyên âm sau -> "ươ" ("dduowc"->"được"). */
     private fun replaceUow(text: String, up: BooleanArray): Pair<String, BooleanArray> {
         var t = text
         var u = up
@@ -81,6 +89,15 @@ class TelexEngine(
         while (i >= 0) {
             if (i > 0 && t[i - 1] == 'q') {
                 i = t.indexOf("uow", i + 1)
+            } else if (i + 3 == t.length) {
+                t = t.substring(0, i + 1) + "ơ"
+                u = BooleanArray(t.length) { j ->
+                    when {
+                        j <= i -> u[j]
+                        else -> u[i + 1] || u[i + 2]
+                    }
+                }
+                i = t.indexOf("uow", i + 2)
             } else {
                 t = t.substring(0, i) + "ươ" + t.substring(i + 3)
                 u = BooleanArray(t.length) { j ->

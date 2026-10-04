@@ -223,7 +223,8 @@ class EngineUnitTest {
         val telex = TelexEngine()
         // 'w' gõ sau phụ âm cuối vẫn bẻ dấu nguyên âm
         assertEquals("hơn", telex.transform("honw"))
-        assertEquals("thươ", telex.transform("thuow"))
+        // 1.4.0 (A4): "uow" không coda -> "uơ" giữ 'u'
+        assertEquals("thuơ", telex.transform("thuow"))
         assertEquals("quơ", telex.transform("quow"))
         // applyW trên từ đã commit (bỏ dấu từ xa), giữ tone cũ
         assertEquals("hơn", telex.applyW("hon"))
@@ -234,6 +235,34 @@ class EngineUnitTest {
         assertEquals("hoan", telex.stripTones("hoán"))
         assertEquals("tiên", telex.stripTones("tiến"))
         assertEquals("đươc", telex.stripTones("được")) // tone gỡ, dấu phụ giữ
+    }
+
+    // 1.4.0 (A4): "uow" không gì đi sau -> "uơ" (thuow->thuơ, gõ tiếp thuowng->thương);
+    // "uow" có coda/nguyên âm sau -> "ươ" như cũ; applyW cùng quy tắc.
+    @Test
+    fun testUoOpenVsClosed() {
+        val telex = TelexEngine()
+        val table = listOf(
+            "thuowr" to "thuở",
+            "huow" to "huơ",
+            "khuow" to "khuơ",
+            "thuowng" to "thương",
+            "dduowcs" to "đước", // đ+ư+ớ+c
+            "dduowcj" to "được", // đ+ư+ợ+c ('j' = nặng)
+            "nguowif" to "người",
+            "quow" to "quơ",
+            "truowcs" to "trước",
+            "muowif" to "mười"
+        )
+        for ((keys, expected) in table) {
+            assertEquals("keys=$keys", expected, telex.transform(keys))
+        }
+        // applyW: 'w' bỏ dấu từ xa — "uo" cuối -> "uơ", có coda -> "ươ"
+        assertEquals("thuơ", telex.applyW("thuo"))
+        assertEquals("thuở", telex.applyW("thuỏ"))
+        assertEquals("dươc", telex.applyW("duoc"))
+        // Đặt dấu trên ơ của cụm "uơ"
+        assertEquals("huở", telex.transform("huowr"))
     }
 
     @Test

@@ -21,7 +21,8 @@ class TelexRoundTripTest {
     private val unencodable = setOf(
         "boong", "boóng", "choòng", "gioong", "goong", "goòng", "moong",
         "moóc", "noong", "oóc", "phoóc", "soong", "soóc", "sóoc", "toóc",
-        "voọc", "xoong", "huơ", "khuơ", "thuở", "uở"
+        "voọc", "xoong"
+        // 1.4.0 (A4): huơ khuơ thuở uở gõ được nhờ luật "uow" không coda -> "uơ"
     )
 
     private val telex = TelexEngine()

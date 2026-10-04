@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.text.InputType
 import android.util.Log
+import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -183,6 +184,75 @@ class HKeyIME : InputMethodService() {
         persistLearned() // mất focus -> ghi luôn nếu bẩn
         super.onFinishInputView(finishingInput)
     }
+
+    // -------------------------------------------------- H1: phím cứng
+
+    /** keyCode đã tiêu thụ ở onKeyDown — nuốt luôn onKeyUp tương ứng để
+     *  app không nhận nửa cặp phím. */
+    private val hwConsumed = mutableSetOf<Int>()
+
+    /** Điều kiện chung xử lý phím cứng: bật trong settings, có InputConnection,
+     *  không rawMode, sự kiện từ phím vật lý thật (không phím hệ thống/ảo). */
+    private fun hwGate(event: KeyEvent): Boolean =
+        prefs.getBoolean(SettingsKeys.HW_KEYBOARD, false) &&
+            currentInputConnection != null && !rawMode &&
+            HardwareKeys.usable(event)
+
+    override fun onEvaluateInputViewShown(): Boolean =
+        // Framework tự ẩn bàn phím mềm khi Configuration.keyboard khác
+        // NOKEYS và người dùng tắt "hiện bàn phím ảo" — giữ nguyên super.
+        super.onEvaluateInputViewShown()
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (!hwGate(event)) return super.onKeyDown(keyCode, event)
+        // Đổi ngôn ngữ EN/VI: Ctrl+Space hoặc Shift+Space (kiểm trước meta-
+        // skip vì Ctrl+Space mang META_CTRL).
+        if (keyCode == KeyEvent.KEYCODE_SPACE &&
+            (event.isCtrlPressed || event.isShiftPressed)
+        ) {
+            if (event.repeatCount == 0) toggleLang()
+            hwConsumed += keyCode
+            return true
+        }
+        if (event.metaState and HardwareKeys.SKIP_META != 0) {
+            return super.onKeyDown(keyCode, event) // Ctrl+C/V/A, Alt+Tab...
+        }
+        if (event.repeatCount > 0) {
+            // Auto-repeat: chỉ lặp lại hành động cho Del và chữ; phím đã
+            // nuốt khác nuốt yên; phím chưa nuốt trả app.
+            if (keyCode !in hwConsumed) return super.onKeyDown(keyCode, event)
+            when (val k = HardwareKeys.classify(event)) {
+                is HardwareKeys.Key.Char -> handleCharacter(k.c, fromHardware = true)
+                HardwareKeys.Key.Del -> handleDelete()
+                else -> {}
+            }
+            return true
+        }
+        val consumed = when (val k = HardwareKeys.classify(event)) {
+            is HardwareKeys.Key.Char -> {
+                handleCharacter(k.c, fromHardware = true); true
+            }
+            is HardwareKeys.Key.Digit -> { handlePunct(k.c); true }
+            is HardwareKeys.Key.Punct -> { handlePunct(k.s); true }
+            HardwareKeys.Key.Space -> { handleSpace(); true }
+            HardwareKeys.Key.Enter -> { handleEnter(); true }
+            HardwareKeys.Key.Del -> { handleDelete(); true }
+            HardwareKeys.Key.ForwardDel, HardwareKeys.Key.Arrow -> {
+                // Chốt từ rồi trả app di chuyển/xoá tới; con trỏ đã đổi chỗ
+                commitComposing(); cursorUnknown(); false
+            }
+            HardwareKeys.Key.Tab, HardwareKeys.Key.Esc,
+            HardwareKeys.Key.Other -> { commitComposing(); false }
+        }
+        if (consumed) {
+            hwConsumed += keyCode
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
+        if (hwConsumed.remove(keyCode)) true else super.onKeyUp(keyCode, event)
 
     override fun onFinishInput() {
         // 1.4.0: đổi ô nhập khi đang gõ dở -> chốt từ tại chỗ cũ trước
@@ -801,17 +871,19 @@ class HKeyIME : InputMethodService() {
         kbView?.capsLocked = shiftLocked
     }
 
-    private fun handleCharacter(char: String) {
+    private fun handleCharacter(char: String, fromHardware: Boolean = false) {
         val t0 = if (BuildConfig.DEBUG) System.nanoTime() else 0L
         lastAutoFix = null // gõ ký tự mới = chấp nhận bản sửa, hết hoàn tác
-        val c = if (shiftOn) char.uppercase() else char
+        // H1: phím cứng mang hoa/thường sẵn trong event — bỏ qua shiftOn
+        // phần mềm và không tiêu thụ nó (shift mềm chỉ cho phím trên màn).
+        val c = if (shiftOn && !fromHardware) char.uppercase() else char
         if (rawMode || !vietMode) { // EN mode: gõ thẳng, không Telex/gợi ý (2.x)
-            consumeShift()
+            if (!fromHardware) consumeShift()
             currentInputConnection?.let { icCommit(it, c) }
             tailTracker.append(c)
             return
         }
-        consumeShift() // caps lock (shiftLocked) thì không tự tắt
+        if (!fromHardware) consumeShift() // caps lock (shiftLocked) không tự tắt
         // Con trỏ sát một từ đã gõ (không có space) -> nối phím vào từ đó,
         // kiểu Unikey "bỏ dấu tự do": "hoan" + s -> "hoán", "hon" + w -> "hơn".
         // 1.4.0: chỉ chặn caps lock; shift 1 lần vẫn cho resume.

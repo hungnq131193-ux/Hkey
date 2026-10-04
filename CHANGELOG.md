@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.5 (versionCode 31)
+
+- Sửa lỗi giao diện Cài đặt không cập nhật khi đổi tuỳ chọn: trạng
+  thái nhận ngay, không cần đóng/mở lại ứng dụng.
+- Icon launcher mới: hình bàn phím gọn (không còn chữ H), giữ nền
+  teal → navy, hỗ trợ icon đơn sắc.
+
 ## 1.5.4 (versionCode 30)
 
 - Giao diện cài đặt được làm mới: màu thương hiệu teal/navy cố định

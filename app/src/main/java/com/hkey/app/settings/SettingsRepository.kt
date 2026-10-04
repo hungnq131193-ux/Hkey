@@ -1,6 +1,7 @@
 package com.hkey.app.settings
 
 import android.content.SharedPreferences
+import androidx.annotation.Keep
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,6 +14,7 @@ class SettingsRepository(private val prefs: SharedPreferences) {
     private val _state = MutableStateFlow(SettingsState.from(prefs))
     val state: StateFlow<SettingsState> = _state.asStateFlow()
 
+    @field:Keep
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
         _state.value = SettingsState.from(prefs)
     }

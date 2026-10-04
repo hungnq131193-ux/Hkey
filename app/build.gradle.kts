@@ -29,8 +29,8 @@ android {
         applicationId = "com.hkey.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 29
-        versionName = "1.5.3"
+        versionCode = 30
+        versionName = "1.5.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -89,6 +89,12 @@ android {
     // 1.4.0: Robolectric unit test đọc resources/layout thật (T0)
     testOptions {
         unitTests.isIncludeAndroidResources = true
+    }
+
+    tasks.withType<Test>().configureEach {
+        providers.systemProperty("hkey.appearanceOutputDir").orNull?.let {
+            systemProperty("hkey.appearanceOutputDir", it)
+        }
     }
 
     compileOptions {

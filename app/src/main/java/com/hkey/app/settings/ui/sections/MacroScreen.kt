@@ -1,6 +1,7 @@
 package com.hkey.app.settings.ui.sections
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -21,6 +23,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -75,28 +78,42 @@ fun MacroScreen(vm: SettingsViewModel) {
             // 1.5.2: chừa đáy cho FAB — trước đây FAB che mục cuối
             LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(top = 4.dp, bottom = 88.dp)) {
                 items(items) { (k, v) ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
                     ) {
-                        Text(
-                            k, Modifier.weight(0.35f),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            v, Modifier.weight(0.65f), style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 2, overflow = TextOverflow.Ellipsis
-                        )
-                        IconButton(onClick = {
-                            editing = k to v
-                            editKey = k; editVal = v; editErr = false
-                        }) { Icon(Icons.Filled.Edit, stringResource(R.string.st_macro_add)) }
-                        IconButton(onClick = {
-                            commitItems(items.filter { it.first != k })
-                        }) {
-                            Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error)
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                k, Modifier.weight(0.35f),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                v, Modifier.weight(0.65f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis
+                            )
+                            IconButton(onClick = {
+                                editing = k to v
+                                editKey = k; editVal = v; editErr = false
+                            }) { Icon(Icons.Filled.Edit, stringResource(R.string.st_macro_add)) }
+                            IconButton(onClick = {
+                                commitItems(items.filter { it.first != k })
+                            }) {
+                                Icon(
+                                    Icons.Filled.Delete, null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
                 }

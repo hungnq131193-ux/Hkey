@@ -16,11 +16,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /** 1.4.0 (U2): hàng cài đặt dùng chung cho các màn con. */
@@ -46,8 +48,9 @@ fun SectionHeader(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 28.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
+        modifier = Modifier.padding(start = 28.dp, end = 16.dp, top = 20.dp, bottom = 6.dp)
     )
 }
 
@@ -106,7 +109,10 @@ fun ActionRow(
 
 @Composable
 private fun IconBubble(icon: ImageVector, bg: Color, fg: Color) {
-    Box(Modifier.size(36.dp).background(bg, CircleShape), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier.size(40.dp).background(bg, RoundedCornerShape(12.dp)),
+        contentAlignment = Alignment.Center
+    ) {
         Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(20.dp))
     }
 }
@@ -203,7 +209,14 @@ fun RadioRow(title: String, desc: String?, selected: Boolean, onClick: () -> Uni
 fun GroupCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(
+            1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
     ) { Column(content = content) }
 }
 
@@ -211,7 +224,7 @@ fun GroupCard(content: @Composable ColumnScope.() -> Unit) {
 @Composable
 fun NavDivider() {
     HorizontalDivider(
-        Modifier.padding(start = 66.dp),
+        Modifier.padding(start = 70.dp),
         color = MaterialTheme.colorScheme.outlineVariant
     )
 }
@@ -226,7 +239,7 @@ fun NavRow(
 ) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick)
-            .defaultMinSize(minHeight = 48.dp)
+            .defaultMinSize(minHeight = 64.dp)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -238,7 +251,10 @@ fun NavRow(
             Spacer(Modifier.width(14.dp))
         }
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                title, style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium
+            )
             if (desc.isNotEmpty()) {
                 Text(
                     desc, style = MaterialTheme.typography.bodySmall,
@@ -249,7 +265,7 @@ fun NavRow(
         Icon(
             Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
         )
     }
 }

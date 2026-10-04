@@ -10,6 +10,9 @@
     <string name="st_setup_pick_desc">Đặt HKey làm bàn phím mặc định</string>
     <string name="st_setup_done">Đã sẵn sàng — gõ thử bên dưới</string>
     <string name="st_try">Gõ thử tại đây…</string>
+    <string name="st_app_subtitle">Bàn phím tiếng Việt</string>
+    <string name="st_status_ready">Sẵn sàng</string>
+    <string name="st_status_setup">Cần thiết lập</string>
     <string name="st_sec_method">Kiểu gõ</string>
     <string name="st_sec_smart">Gõ thông minh</string>
     <string name="st_sec_ui">Giao diện</string>

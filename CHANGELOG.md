@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.4 (versionCode 30)
+
+- Giao diện cài đặt được làm mới: màu thương hiệu teal/navy cố định
+  (sáng & tối), card bo góc 24dp có viền mảnh, icon trong ô vuông bo
+  góc, hàng điều hướng cao hơn và rõ ràng hơn.
+- Trang chủ có thẻ nhận diện HKey: icon mới, tên ứng dụng, phiên bản
+  và trạng thái thật ("Sẵn sàng" / "Cần thiết lập").
+- Icon launcher hoàn toàn mới: chữ H hình phím trên nền chuyển
+  teal → navy, có dải phím nhỏ và điểm nhấn aqua; hỗ trợ icon đơn sắc.
+- Không thay đổi engine gõ, cách bỏ dấu hay cài đặt — mọi chức năng
+  của 1.5.3 được giữ nguyên.
+
 ## 1.5.3 (versionCode 29)
 
 - Gõ đúng từ hơn: vần trần mơ hồ hai dạng giờ chọn theo từ phổ biến

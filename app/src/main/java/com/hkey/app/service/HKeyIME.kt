@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
@@ -766,7 +767,10 @@ class HKeyIME : InputMethodService() {
             }
             k.tag == "fn:lang" -> toggleLang()
             k.tag == "fn:ime" -> { // 3.x; 1.2: không có IME kế -> mở bảng chọn
-                if (!switchToNextInputMethod(false)) {
+                // switchToNextInputMethod cần API 28+
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P ||
+                    !switchToNextInputMethod(false)
+                ) {
                     (getSystemService(Context.INPUT_METHOD_SERVICE)
                         as? android.view.inputmethod.InputMethodManager)?.showInputMethodPicker()
                 }

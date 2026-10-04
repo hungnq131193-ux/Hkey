@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.4.0 (versionCode 20)
+
+**Màn cài đặt viết lại bằng Jetpack Compose**
+- 1 màn hình cuộn + 8 màn con: Kiểu gõ, Gõ thông minh, Giao diện,
+  Phím & phản hồi, Bàn phím cứng, Gõ tắt, Dữ liệu & riêng tư, Giới thiệu.
+- Thẻ "Bắt đầu" tự ẩn khi HKey đã bật + được chọn; ô gõ thử luôn trên đầu.
+- Tuỳ chọn mới: tự hoàn nguyên tiếng Anh, tự sửa, gợi ý, viết hoa đầu câu,
+  vuốt space, cường độ rung (5–60 ms), âm lượng phím, nhịp nhấn giữ.
+- Sao lưu/khôi phục cài đặt dạng JSON; khôi phục mặc định một chạm.
+- Đổi cài đặt áp dụng ngay vào bàn phím đang mở — không cần ẩn/hiện lại.
+
+**Bàn phím cứng (Bluetooth/OTG)**
+- Gõ Telex/VNI trực tiếp: chữ, số, dấu, space, enter, backspace đều đúng;
+  Shift/CapsLock hoạt động; giữ phím lặp lại cho chữ và backspace.
+- Shift+Space hoặc Ctrl+Space đổi Việt/Anh; Ctrl+C/V/A, Alt+Tab, phím hệ
+  thống và mũi tên trả lại cho ứng dụng (từ đang gõ được chốt trước).
+- Ghi chú: khi bàn phím mềm tự ẩn vì có phím cứng, thanh gợi ý rời chưa
+  hiện — gõ vẫn đúng; sẽ bổ sung ở bản sau.
+
+**Gõ mượt hơn — gợi ý và tự sửa chạy nền**
+- Toàn bộ predictor (gợi ý, sửa lỗi, đoán từ tiếp theo) chạy trên luồng
+  riêng; kết quả cũ tự huỷ khi gõ tiếp — không còn gõ chờ gợi ý.
+- Bấm space chốt từ ngay; bản sửa chính tả đến sau trong nền, chỉ áp khi
+  con trỏ vẫn đứng yên — "khoogn" gõ tiếp không giật, đứng im thì thành
+  "không". Backspace ngay sau vẫn hoàn tác về chữ đã gõ.
+- Engine biến đổi nhanh hơn ~30% nhờ cache + quét một lượt; rung/âm phím
+  theo đúng cường độ cài đặt.
+
+**Tiếng Anh hiển thị đúng ngay khi đang gõ**
+- "new", "view", "power", "window"… hiện đúng chữ gốc trong lúc gõ (không
+  còn nháy "neư", "vieư" rồi mới hoàn nguyên); ô gợi ý giữa đề nghị bản
+  tiếng Việt để chạm chốt nhanh.
+- Resume an toàn: từ tiếng Anh đã chốt không bị kéo về buffer biến dạng
+  khi gõ tiếp phím dấu.
+
+**Sửa lỗi chính tả & đặt dấu**
+- "uo"+w cuối từ ra "uơ" đúng ("thuow"→"thuơ", "khuow"→"khuơ"); trước đây
+  luôn ra "ươ". Có phụ âm cuối vẫn là "ươ" ("dduowcj"→"được").
+- Cụm "uya" đặt dấu đúng âm chính: "khuyaf"→"khuyà" (trước "khuỳa").
+- Chốt từ đang gõ dở khi chạm chỗ khác/đổi ô/ẩn phím — không còn nuốt
+  buffer hay để dấu lơ lửng.
+- Bảng kiểm 405 ca Telex→kết quả cho cả 2 kiểu đặt dấu đảm bảo không hồi quy.
+
+**Nền tảng**
+- Trạng thái từ điển rõ ràng: không gọi predictor trước khi sẵn sàng —
+  ô giữa hiện đúng chữ đang gõ, không crash.
+- Migration cài đặt giữ nguyên theme/kiểu gõ/macro/dữ liệu học khi nâng
+  cấp từ 1.3.x.
+
 ## 1.3.4 (versionCode 19)
 
 **Chữ tiếng Anh không còn bị biến dạng mà không hoàn nguyên**

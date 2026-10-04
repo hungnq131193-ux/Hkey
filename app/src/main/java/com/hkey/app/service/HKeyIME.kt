@@ -101,6 +101,14 @@ class HKeyIME : InputMethodService() {
 
     private val repeatHandler = Handler(Looper.getMainLooper())
 
+    // 1.4.0 (P1/C1): mọi thao tác predictor chỉ chạy trên worker này.
+    // Tạo trong onCreate qua workerPosterOverride (test inject) hoặc
+    // HandlerThread mặc định. Trước onCreate rơi về đồng bộ.
+    private var suggestWorker: SuggestWorker? = null
+    private val worker: SuggestWorker get() = suggestWorker ?: SYNC_WORKER
+    @Volatile private var predictorReady = false // P5: index đã install
+    private var suggestGen = 0 // số hiệu request gợi ý — kết quả cũ bị bỏ
+
     private val prefs get() = getSharedPreferences(SettingsKeys.PREFS, Context.MODE_PRIVATE)
     // 1.4.0 (S2): đổi cài đặt áp ngay không cần restart — giữ field chống GC,
     // đăng ký ở onCreate / huỷ ở onDestroy.
@@ -123,9 +131,11 @@ class HKeyIME : InputMethodService() {
         super.onCreate()
         SettingsMigration.run(prefs) // 1.4.0: kb_theme từ dark_theme cũ
         prefs.registerOnSharedPreferenceChangeListener(prefListener) // S2
-        // Nạp từ điển + mô hình n-gram + dữ liệu học ở thread nền; merge trên
-        // main rồi dựng chỉ mục nền một lần — không chặn phím đầu (S1, G1-G3).
-        Thread {
+        suggestWorker = workerPosterOverride?.let { SuggestWorker(it, {}) }
+            ?: SuggestWorker.handlerThread()
+        // Nạp từ điển + mô hình n-gram + dữ liệu học rồi dựng chỉ mục —
+        // toàn bộ trên worker: predictor không bị chạm từ luồng khác (P1).
+        worker.post {
             val words = resources.openRawResource(R.raw.vi_dict)
                 .bufferedReader().use { it.lineSequence().toList() }
             // 4.x: model nhị phân (mmap nếu asset không nén) — không parse
@@ -136,34 +146,32 @@ class HKeyIME : InputMethodService() {
                     .bufferedReader().use { it.lineSequence().toList() }
             } catch (e: Exception) { emptyList() }
             val learned = learnedStore.load()
-            repeatHandler.post {
-                if (destroyed) return@post
-                predictor.addWords(words)
-                if (packed != null) predictor.loadPacked(packed)
-                predictor.addPhrases(phrases.mapNotNull { l ->
-                    val t = l.trim()
-                    val i = t.indexOf(' ')
-                    if (i <= 0) null else t.substring(0, i) to t.substring(i + 1).trim()
-                })
-                if (learned != null) {
-                    predictor.importLearned(learned.words, learned.bigrams, learned.trigrams)
-                }
-                val (snapshot, version) = predictor.snapshotForIndex()
-                Thread {
-                    val idx = predictor.buildIndexFrom(snapshot)
-                    repeatHandler.post {
-                        if (!destroyed) predictor.installIndex(idx, version)
-                    }
-                }.start()
+            if (destroyed) return@post
+            predictor.addWords(words)
+            if (packed != null) predictor.loadPacked(packed)
+            predictor.addPhrases(phrases.mapNotNull { l ->
+                val t = l.trim()
+                val i = t.indexOf(' ')
+                if (i <= 0) null else t.substring(0, i) to t.substring(i + 1).trim()
+            })
+            if (learned != null) {
+                predictor.importLearned(learned.words, learned.bigrams, learned.trigrams)
             }
-        }.start()
+            val (snapshot, version) = predictor.snapshotForIndex()
+            val idx = predictor.buildIndexFrom(snapshot)
+            if (destroyed) return@post
+            predictor.installIndex(idx, version)
+            repeatHandler.post { predictorReady = true }
+        }
     }
 
     override fun onDestroy() {
         destroyed = true
         prefs.unregisterOnSharedPreferenceChangeListener(prefListener) // S2
         kbView?.release() // dọn repeat/popup của view
-        persistLearned() // ghi theo lô khi service dừng (3.6)
+        repeatHandler.removeCallbacks(saveLearned)
+        persistLearned() // post ghi theo lô lên worker trước khi quit (3.6)
+        suggestWorker?.quitSafely() // P1: xử lý hết hàng đợi rồi thoát
         super.onDestroy()
     }
 
@@ -235,14 +243,14 @@ class HKeyIME : InputMethodService() {
     private fun persistLearned() {
         if (!learnedDirty) return
         learnedDirty = false
-        predictor.boundLearned(LearningStore.MAX_LEARNED_WORDS)
-        val (words, bis, tris) = predictor.exportLearned()
-        val store = learnedStore
         val gen = learnedGen
+        val store = learnedStore
         // 1.10: "xóa dữ liệu học" xảy ra giữa chừng -> hủy ghi snapshot cũ
-        // 1.3.4: sort cạnh lớn (tới 20k) chuyển xuống nền — trước đây chạy
-        // trên main thread ngay khi ẩn bàn phím
-        Thread {
+        // P1: export + sort + ghi file đều trên worker — một luồng chạm
+        // predictor, hàng đợi FIFO giữ thứ tự với clearLearned.
+        worker.post {
+            predictor.boundLearned(LearningStore.MAX_LEARNED_WORDS)
+            val (words, bis, tris) = predictor.exportLearned()
             val cappedBis = if (bis.size > LearningStore.MAX_USER_BIGRAMS)
                 bis.sortedByDescending { it.third }
                     .take(LearningStore.MAX_USER_BIGRAMS)
@@ -254,7 +262,7 @@ class HKeyIME : InputMethodService() {
             if (gen == learnedGen) {
                 store.save(LearningStore.Data(words, cappedBis, cappedTris))
             }
-        }.start()
+        }
     }
 
     /** Nút "Xóa dữ liệu học" ở MainActivity đặt cờ; IME tiêu thụ ở lần focus
@@ -262,11 +270,14 @@ class HKeyIME : InputMethodService() {
     private fun consumeLearningCleared() {
         if (prefs.getBoolean(SettingsKeys.LEARNING_CLEARED, false)) {
             prefs.edit().remove(SettingsKeys.LEARNING_CLEARED).apply()
-            predictor.clearLearned()
             learnedGen++ // 1.10: vô hiệu mọi ghi learned đang chạy nền
-            learnedStore.clear()
             learnedDirty = false
             repeatHandler.removeCallbacks(saveLearned)
+            val store = learnedStore
+            worker.post {
+                predictor.clearLearned()
+                store.clear()
+            }
         }
     }
 
@@ -411,9 +422,12 @@ class HKeyIME : InputMethodService() {
      *  so với từ điển, không phải âm tiết VN, chưa từng biết).
      *  1.3: truyền thêm từ trước nữa (prev2) để học trigram cá nhân. */
     private fun learn(prev: String, word: String, prev2: String = "") {
-        if (noLearning || predictor.looksLikeTypo(word)) return
-        predictor.recordSequence(prev, word, prev2 = prev2)
-        markLearnedDirty()
+        // P1: recordSequence chạy trên worker — main chỉ gửi việc.
+        worker.post {
+            if (noLearning || predictor.looksLikeTypo(word)) return@post
+            predictor.recordSequence(prev, word, prev2 = prev2)
+            markLearnedDirty()
+        }
     }
 
     /** Ghi nhận con trỏ dự kiến sau một edit của chính ta: thu vùng chọn về
@@ -950,10 +964,7 @@ class HKeyIME : InputMethodService() {
         val fixed = if (!allowCorrection || expanded != null || isProperNoun ||
             tokenGlued || typedWord === raw || noSuggest
         ) null
-            // 1.3.2: correction bỏ qua chuỗi không-phải-âm-tiết -> typoFix
-            // bắt lỗi đảo ký tự / sót ký tự giữa từ ("khôgn" -> "không")
-            else (predictor.correction(typed, prev, prev2)
-                ?: predictor.typoFix(typed, prev, prev2))
+            else computeCorrection(typed, prev, prev2)
             // 1.2: bản sửa trả chữ thường — áp lại kiểu hoa của từ đã gõ
             ?.let { TextContext.matchCase(typed, it) }
         val word = expanded ?: fixed ?: typedWord
@@ -1228,11 +1239,66 @@ class HKeyIME : InputMethodService() {
         }
     }
 
+    /** P1: đầu vào gợi ý bất biến, chụp trên main rồi chuyển sang worker. */
+    internal data class SuggestRequest(
+        val gen: Int,
+        val current: String, // chữ đang ở vùng composing (sau live restore)
+        val restore: String?, // bản đề nghị đã tính sẵn (VN khi live restore / raw)
+        val ctx: String,
+        val ctx2: String,
+        val tokenGlued: Boolean
+    )
+
+    internal data class CandidateSet(val c1: String, val c2: String, val c3: String)
+
+    /** Tính 3 ô gợi ý khi đang composing — thuần, chỉ gọi predictor; chạy
+     *  trên worker. Không đụng InputConnection/UI. */
+    internal fun computeCandidates(req: SuggestRequest): CandidateSet {
+        // 1.1: mảng trong url/email/ip -> không gợi ý, không sửa
+        val completions = if (req.tokenGlued) emptyList()
+            else predictor.completions(req.current, req.ctx, req.ctx2)
+        // 3.4: chỉ đề nghị sửa khi từ đang gõ không phải tiền tố hợp lệ
+        val fix = req.restore
+            ?: if (req.tokenGlued || predictor.isPrefixOfKnownWord(req.current)) null
+            else predictor.correction(req.current, req.ctx, req.ctx2)
+                ?: predictor.typoFix(req.current, req.ctx, req.ctx2)
+        // 1.2: hiện gợi ý đúng kiểu hoa để chạm vào ăn ngay
+        return CandidateSet(
+            completions.getOrNull(0)
+                ?.let { TextContext.matchCase(req.current, it) } ?: "",
+            fix?.let { TextContext.matchCase(req.current, it) } ?: req.current,
+            completions.getOrNull(1)
+                ?.let { TextContext.matchCase(req.current, it) } ?: ""
+        )
+    }
+
+    private fun applyCandidates(c: CandidateSet) {
+        candidate1?.text = c.c1
+        candidate2?.text = c.c2
+        candidate3?.text = c.c3
+    }
+
+    /** P1/P2: correction+typoFix chạy trên worker; main chờ tối đa 30 ms
+     *  (đường đồng bộ cho Enter/dấu câu — quá hạn thì không sửa). */
+    internal fun computeCorrection(typed: String, prev: String, prev2: String): String? {
+        val task = java.util.concurrent.FutureTask<String?> {
+            // 1.3.2: correction bỏ qua chuỗi không-phải-âm-tiết -> typoFix
+            // bắt lỗi đảo ký tự / sót ký tự giữa từ ("khôgn" -> "không")
+            predictor.correction(typed, prev, prev2)
+                ?: predictor.typoFix(typed, prev, prev2)
+        }
+        worker.post(task)
+        return try {
+            task.get(30, java.util.concurrent.TimeUnit.MILLISECONDS)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun updateSuggestions() {
         if (rawMode || noSuggest || !vietMode) {
-            candidate1?.text = ""
-            candidate2?.text = ""
-            candidate3?.text = ""
+            suggestGen++ // hủy mọi request đang bay
+            applyCandidates(CandidateSet("", "", ""))
             return
         }
         val (ctx, ctx2) = contextPairBeforeCursor()
@@ -1245,9 +1311,6 @@ class HKeyIME : InputMethodService() {
             val current = currentDisplay.ifEmpty { transformed }
             val liveRestored = optLiveRestore && !tokenGlued &&
                 ViSyllable.liveRestorable(raw, transformed) && current == raw
-            // 1.1: mảng trong url/email/ip -> không gợi ý, không sửa
-            val completions = if (tokenGlued) emptyList()
-                else predictor.completions(current, ctx, ctx2)
             // 1.4.0: đang live restore -> ô giữa đề nghị bản VN (chạm = chốt VN
             // + học); còn lại giữ 1.3: kết quả không phải âm tiết VN -> đề
             // nghị phím thô ("text")
@@ -1256,41 +1319,51 @@ class HKeyIME : InputMethodService() {
                 liveRestored -> transformed
                 else -> raw.takeIf { ViSyllable.restorable(it, current) }
             }
-            // 3.4: chỉ đề nghị sửa khi từ đang gõ không phải tiền tố hợp lệ
-            val fix = restore
-                ?: if (tokenGlued || predictor.isPrefixOfKnownWord(current)) null
-                else predictor.correction(current, ctx, ctx2)
-                    ?: predictor.typoFix(current, ctx, ctx2)
-            // 1.2: hiện gợi ý đúng kiểu hoa để chạm vào ăn ngay
-            candidate1?.text = completions.getOrNull(0)
-                ?.let { TextContext.matchCase(current, it) } ?: ""
-            candidate2?.text = fix?.let { TextContext.matchCase(current, it) } ?: current
-            candidate3?.text = completions.getOrNull(1)
-                ?.let { TextContext.matchCase(current, it) } ?: ""
+            val req = SuggestRequest(
+                ++suggestGen, current, restore, ctx, ctx2, tokenGlued
+            )
+            worker.post {
+                val c = computeCandidates(req)
+                repeatHandler.post { if (req.gen == suggestGen) applyCandidates(c) }
+            }
         } else {
             // Từ vừa bị auto-correct: ô giữa hiện đúng từ user đã gõ,
             // chạm vào để khôi phục (hoặc bấm ⌫).
             val fix = lastAutoFix
             if (fix != null && autoFixTail(fix) > 0) {
-                candidate1?.text = ""
-                candidate2?.text = fix.typed
-                candidate3?.text = ""
+                suggestGen++
+                applyCandidates(CandidateSet("", fix.typed, ""))
                 return
             }
             // 1.1: đang đứng giữa url/email/ip -> không gợi ý từ tiếp theo
             if (tokenGlued) {
-                candidate1?.text = ""
-                candidate2?.text = ""
-                candidate3?.text = ""
+                suggestGen++
+                applyCandidates(CandidateSet("", "", ""))
                 return
             }
             // Đã chốt từ: gợi ý từ tiếp theo theo ngữ cảnh 2 từ (3.3);
             // shift đang bật (đầu câu) thì hiện hoa luôn (1.2)
-            val next = predictor.predictNext(ctx, ctx2)
-                .map { if (shiftOn) it.replaceFirstChar(Char::uppercase) else it }
-            candidate1?.text = next.getOrNull(1) ?: ""
-            candidate2?.text = next.getOrNull(0) ?: ""
-            candidate3?.text = next.getOrNull(2) ?: ""
+            val gen = ++suggestGen
+            val up = shiftOn
+            worker.post {
+                val next = predictor.predictNext(ctx, ctx2)
+                repeatHandler.post {
+                    if (gen != suggestGen) return@post
+                    val l = next.map { if (up) it.replaceFirstChar(Char::uppercase) else it }
+                    applyCandidates(
+                        CandidateSet(l.getOrNull(1) ?: "", l.getOrNull(0) ?: "", l.getOrNull(2) ?: "")
+                    )
+                }
+            }
         }
+    }
+
+    companion object {
+        private val SYNC_WORKER = SuggestWorker.synchronous()
+
+        /** Test inject poster worker trước khi service onCreate (hàng đợi
+         *  tay/đồng bộ); production giữ null -> HandlerThread. */
+        @androidx.annotation.VisibleForTesting
+        var workerPosterOverride: ((Runnable) -> Unit)? = null
     }
 }

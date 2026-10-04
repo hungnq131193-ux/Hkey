@@ -116,6 +116,9 @@ class HKeyIME : InputMethodService() {
     private var suggestWorker: SuggestWorker? = null
     private val worker: SuggestWorker get() = suggestWorker ?: SYNC_WORKER
     @Volatile private var predictorReady = false // P5: index đã install
+    // 1.4.5: tập từ phổ biến cho cổng phím lệ thường Telex — publish trên
+    // worker cùng index; đọc trên main thread qua EngineOptions.commonWord.
+    @Volatile private var commonSet: Set<String> = emptySet()
     private var suggestGen = 0 // số hiệu request gợi ý — kết quả cũ bị bỏ
 
     private val prefs get() = getSharedPreferences(SettingsKeys.PREFS, Context.MODE_PRIVATE)
@@ -170,6 +173,7 @@ class HKeyIME : InputMethodService() {
             val idx = predictor.buildIndexFrom(snapshot)
             if (destroyed) return@post
             predictor.installIndex(idx, version)
+            commonSet = predictor.commonWords() // 1.4.5: cổng phím lệ thường
             repeatHandler.post { predictorReady = true }
         }
     }
@@ -396,7 +400,10 @@ class HKeyIME : InputMethodService() {
         val opts = EngineOptions(
             method = ImeMethod.fromPref(prefs.getString(SettingsKeys.METHOD, null)),
             newToneStyle = prefs.getBoolean(SettingsKeys.TONE_NEW, true),
-            spellCheckTone = prefs.getBoolean(SettingsKeys.SPELL_CHECK, true)
+            spellCheckTone = prefs.getBoolean(SettingsKeys.SPELL_CHECK, true),
+            // 1.4.5: đọc live — set rỗng trước khi model nạp xong thì mọi
+            // phím lệ thường đều giữ nguyên (hành vi cũ, an toàn).
+            commonWord = { w -> commonSet.contains(w) }
         )
         val macroStr = prefs.getString(SettingsKeys.MACROS, "") ?: ""
         val sig = listOf(opts.method, opts.newToneStyle, opts.spellCheckTone, macroStr)

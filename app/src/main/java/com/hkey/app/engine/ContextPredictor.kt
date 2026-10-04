@@ -439,6 +439,28 @@ class ContextPredictor {
         }
     }
 
+    /** 1.4.5: tập "từ phổ biến" — cổng cho TelexEngine tiêu thụ phím ở vị
+     *  trí lệ thường ("phari"->"phải"). Ngưỡng > tần suất file từ điển
+     *  (100): từ chỉ có trong vi_dict mà corpus không thấy ("tãi" 100) hay
+     *  từ hiếm ("phốt" 38, "vía" 187) KHÔNG mở đường tắt — "taxi"/"visa"/
+     *  "photos" giữ nguyên phím. Từ đã học (personal>0) luôn tính: bảo vệ
+     *  cả phía phím thô ("mono" đã học -> không bị bẻ thành "môn"). */
+    fun commonWords(): Set<String> {
+        val s = HashSet<String>()
+        for (e in vocabulary.values) {
+            if (e.freq >= COMMON_FREQ || e.personal > 0) s.add(e.word)
+        }
+        return s
+    }
+
+    private companion object {
+        /** Ngưỡng "từ phổ biến" cho cổng phím lệ thường Telex (1.4.5):
+         *  trên tần suất file từ điển (100) và trên từ hiếm nhưng xung đột
+         *  Latin ("vía"=187) — "taxi"->"tãi"(100), "photos"->"phốt"(38)
+         *  không đủ mở đường tắt. */
+        const val COMMON_FREQ = 200
+    }
+
     /** Nạp mô hình corpus từ vi_model.tsv (luồng nền parse xong, gọi trên
      *  main thread). Tần suất thật thay cho điểm phẳng 100 (G1). */
     fun loadModel(

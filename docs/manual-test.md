@@ -18,6 +18,12 @@ Chạy sau mỗi giai đoạn, trước khi chuyển giai đoạn tiếp theo.
 
 ## Gõ tiếng Việt cơ bản
 - App nhắn tin/Zalo: gõ câu dài có dấu, có `dd`, `w`, `z` (vd "đường", "hơn", "hoasz"→"hoas").
+- **Đặt dấu giữa cụm nguyên âm (1.4.5):** `phari`→`phải`, `thari`→`thải`,
+  `hori`→`hỏi`, `phasi`→`phái`. Tiếng Anh giữ nguyên: `taxi`, `visa`,
+  `using`, `music`, `paris`.
+- **Đúp nguyên âm đơn sau phím dấu (1.4.5):** `motoj`→`một`,
+  `totos`→`tốt`, `botoj`→`bột`. Giữ nguyên: `photos`, `data`, `moto`,
+  `mono`, `delete`, `banana`.
 
 ## Ô nhạy cảm (kiểm tra B1 — đúng từ Giai đoạn 2.1)
 - Thanh địa chỉ trình duyệt: `www.example.com/pass` — phải ra nguyên văn.

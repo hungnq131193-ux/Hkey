@@ -331,3 +331,123 @@ class EngineUnitTest {
         assertTrue(predictor.predictNext("hôm").contains("nay"))
     }
 }
+
+/** 1.4.5: phím ở vị trí lệ thường — dấu thanh kẹt giữa cụm nguyên âm
+ *  ("phari") và đúp nguyên âm đơn sau phím dấu ("motoj") — chỉ tiêu thụ
+ *  khi kết quả là từ phổ biến còn phím thô thì không ("taxi" giữ nguyên). */
+class AmbiguousKeyTest {
+
+    // Tập "từ phổ biến" mô phỏng ContextPredictor.commonWords(): các từ
+    // corpus tần suất >= 200. "tãi"/"phốt"/"vía"/"dất" cố ý vắng mặt —
+    // chúng hiếm nên không mở đường tắt cho phím thô Latin.
+    private val common = setOf(
+        "phải", "phái", "phài", "phãi", "phại",
+        "khải", "thải", "cải", "hải", "tải", "vải", "dải", "giải",
+        "rải", "trải", "sải", "chải", "ngải",
+        "cỏi", "hỏi", "mỏi", "tỏi", "sỏi", "khỏi",
+        "một", "tốt", "hốt", "mốt", "bốt", "đốt", "nốt", "sốt",
+        "chốt", "nhốt", "thốt", "rốt", "cốt", "đột", "tột", "lột",
+        "bột", "hột", "mộc", "tiếng", "dáng", "trước", "hôm", "tuân"
+    )
+    private val e = TelexEngine(
+        EngineOptions(commonWord = { it in common })
+    )
+
+    @Test
+    fun midClusterToneConsumedWhenResultCommon() {
+        // "phải" = pha + r + i — 'r' đứng giữa hai nguyên âm
+        assertEquals("phải", e.transform("phari"))
+        assertEquals("phái", e.transform("phasi"))
+        assertEquals("phài", e.transform("phafi"))
+        assertEquals("phãi", e.transform("phaxi"))
+        assertEquals("phại", e.transform("phaji"))
+        assertEquals("khải", e.transform("khari"))
+        assertEquals("thải", e.transform("thari"))
+        assertEquals("hỏi", e.transform("hori"))
+        assertEquals("khỏi", e.transform("khori"))
+        assertEquals("cỏi", e.transform("cori"))
+        // Kiểu hoa đầu từ vẫn giữ
+        assertEquals("Phải", e.transform("Phari"))
+    }
+
+    @Test
+    fun midClusterToneKeptWhenResultUncommon() {
+        // Kết quả âm tiết hợp lệ nhưng KHÔNG phổ biến -> phím thô
+        assertEquals("taxi", e.transform("taxi"))   // "tãi" hiếm
+        assertEquals("visa", e.transform("visa"))   // "vía" hiếm
+        assertEquals("mari", e.transform("mari"))   // "mải" hiếm
+        assertEquals("using", e.transform("using")) // "úsng" không phải từ
+        assertEquals("basic", e.transform("basic"))
+        assertEquals("music", e.transform("music"))
+        assertEquals("major", e.transform("major"))
+        assertEquals("paris", e.transform("paris"))
+        // Phím thô đã là từ phổ biến -> ưu tiên giữ nguyên (veto)
+        val e2 = TelexEngine(
+            EngineOptions(commonWord = { it == "phải" || it == "phari" })
+        )
+        assertEquals("phari", e2.transform("phari"))
+    }
+
+    @Test
+    fun loneVowelDoubleAfterTone() {
+        // "một" = mot + o + j — 'o' đúp nguyên âm ĐƠN LẺ sau phụ âm cuối,
+        // chỉ được khi đã tiêu thụ phím thanh và kết quả phổ biến
+        assertEquals("một", e.transform("motoj"))
+        assertEquals("mốt", e.transform("motos"))
+        assertEquals("tốt", e.transform("totos"))
+        assertEquals("hốt", e.transform("hotos"))
+        assertEquals("bột", e.transform("botoj"))
+        assertEquals("Một", e.transform("Motoj"))
+        // Kết quả không phổ biến -> giữ nguyên
+        assertEquals("photos", e.transform("photos")) // "phốt" hiếm
+        assertEquals("datas", e.transform("datas"))   // "dất" hiếm
+        // Thanh không đặt được trên coda t -> giữ nguyên (luật coda)
+        assertEquals("motof", e.transform("motof"))
+        assertEquals("motor", e.transform("motor"))
+        // KHÔNG có phím thanh -> nguyên âm đơn lẻ vẫn là chữ thật
+        assertEquals("moto", e.transform("moto"))
+        assertEquals("mono", e.transform("mono"))
+        assertEquals("data", e.transform("data"))
+        assertEquals("delete", e.transform("delete"))
+        assertEquals("banana", e.transform("banana"))
+    }
+
+    @Test
+    fun noDictKeepsOldBehavior() {
+        // commonWord = null (mặc định) -> phím lệ thường luôn là chữ thật
+        val e0 = TelexEngine()
+        assertEquals("phari", e0.transform("phari"))
+        assertEquals("motoj", e0.transform("motoj"))
+        assertEquals("taxi", e0.transform("taxi"))
+        // Đường đi chuẩn không đổi
+        assertEquals("phải", e0.transform("phair"))
+        assertEquals("một", e0.transform("mootj"))
+        assertEquals("tiếng", e0.transform("tiengse"))
+        assertEquals("tiêng", e0.transform("tienge"))
+        assertEquals("dáng", e0.transform("dasng"))
+        assertEquals("trước", e0.transform("truowcs"))
+        // Và vẫn đúng khi có từ điển (không qua cổng lệ thường)
+        assertEquals("phải", e.transform("phair"))
+        assertEquals("một", e.transform("mootj"))
+        assertEquals("tiếng", e.transform("tiengse"))
+        assertEquals("trước", e.transform("truowcs"))
+    }
+
+    @Test
+    fun commonWordsFromPredictor() {
+        // Từ chỉ có trong file từ điển (freq=100) không đủ mở đường tắt;
+        // từ corpus tần suất cao và từ đã học thì có.
+        val p = ContextPredictor()
+        p.addWords(listOf("nghiệm", "xuyến")) // freq=100 -> không phổ biến
+        var s = p.commonWords()
+        assertTrue("phải" in s)   // corpus seed/corpus nhiễu
+        assertTrue("một" in s)
+        assertFalse("nghiệm" in s)
+        assertFalse("xuyến" in s)
+        assertFalse("taxi" in s)
+        // Từ đã học (personal>0) luôn tính — bảo vệ phím thô đã học
+        p.recordSequence("", "taxi", 0L, "")
+        s = p.commonWords()
+        assertTrue("taxi" in s)
+    }
+}

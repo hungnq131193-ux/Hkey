@@ -16,7 +16,13 @@ enum class ImeMethod(val pref: String) {
 data class EngineOptions(
     val method: ImeMethod = ImeMethod.TELEX,
     val newToneStyle: Boolean = true,   // true: "hoà"; false: "hòa"
-    val spellCheckTone: Boolean = true  // dấu vi phạm luật coda -> in phím thô
+    val spellCheckTone: Boolean = true, // dấu vi phạm luật coda -> in phím thô
+    /** 1.4.5: tra cứu "từ phổ biến" cho phím ở vị trí lệ thường (dấu thanh
+     *  giữa cụm nguyên âm "phari"->'r', đúp nguyên âm đơn sau phím dấu
+     *  "motoj"). Chỉ tiêu thụ phím lệ thường khi kết quả là từ phổ biến —
+     *  "phari"->"phải" nhưng "taxi" giữ nguyên ("tãi" không phổ biến).
+     *  null = không tiêu thụ phím lệ thường (mặc định, giữ hành vi cũ). */
+    val commonWord: ((String) -> Boolean)? = null
 )
 
 /** Giao diện chung của bộ gõ — HKeyIME giữ engine qua interface này (2.x). */

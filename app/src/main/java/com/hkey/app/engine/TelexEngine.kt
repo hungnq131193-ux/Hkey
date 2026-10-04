@@ -88,22 +88,36 @@ class TelexEngine(
     /** Phím `mark` ('a'/'e'/'o') gõ sau cùng (đã cắt khỏi word): quét ngược
      *  tìm nguyên âm cùng loại đứng kề một nguyên âm khác rồi đúp lên
      *  â/ê/ô, giữ tone và kiểu hoa — như applyW nhưng chặt hơn: nguyên âm
-     *  đơn lẻ giữa phụ âm không đụng ("data", "delete"). */
-    private fun applyRetroDouble(word: String, mark: Char): String? {
+     *  đơn lẻ giữa phụ âm không đụng ("data", "delete").
+     *  1.4.5: `relaxed` cho phép đúp cả nguyên âm đơn lẻ ("mot"+"o" -> "môt")
+     *  — chỉ bật khi có bằng chứng gõ TV (phím thanh đã tiêu thụ) và kết quả
+     *  còn qua cổng từ phổ biến ở caller. Trả Pair(kết quả, đụng-đơn-lẻ). */
+    private fun applyRetroDouble(
+        word: String, mark: Char, relaxed: Boolean
+    ): Pair<String, Boolean>? {
         val target = when (mark) {
             'a' -> 'â'; 'e' -> 'ê'; 'o' -> 'ô'; else -> return null
         }
+        var loneHit: String? = null
         for (i in word.length - 1 downTo 0) {
             if (decomposed(word[i]).first != mark) continue
             val nearVowel = (i > 0 && ViTone.isVowelChar(word[i - 1])) ||
                 (i + 1 < word.length && ViTone.isVowelChar(word[i + 1]))
-            if (!nearVowel) continue
+            if (!nearVowel) {
+                if (relaxed && loneHit == null) {
+                    val v = vowelBase.getValue(target)[decomposed(word[i]).second]
+                    loneHit = word.substring(0, i) +
+                        (if (word[i].isUpperCase()) v.uppercase() else v) +
+                        word.substring(i + 1)
+                }
+                continue
+            }
             val v = vowelBase.getValue(target)[decomposed(word[i]).second]
-            return word.substring(0, i) +
+            return (word.substring(0, i) +
                 (if (word[i].isUpperCase()) v.uppercase() else v) +
-                word.substring(i + 1)
+                word.substring(i + 1)) to false
         }
-        return null
+        return loneHit?.let { it to true }
     }
 
     /** "uow" -> "ươ" phải chạy trước rule "ow"/"uw"; 'u' sau 'q' là phụ âm.
@@ -206,10 +220,15 @@ class TelexEngine(
     }
 
     /** toneLiteral=true: phím dấu CUỐI được giữ làm chữ thường (đường spell-
-     *  check của transform()); các phím dấu trước vẫn tiêu thụ bình thường. */
-    private fun transformInternal(input: String, toneLiteral: Boolean): String {
+     *  check của transform()); các phím dấu trước vẫn tiêu thụ bình thường.
+     *  allowAmbiguous=false: lượt chạy lại sau khi cổng từ phổ biến từ chối —
+     *  phím ở vị trí lệ thường giữ làm chữ (1.4.5). */
+    private fun transformInternal(
+        input: String, toneLiteral: Boolean, allowAmbiguous: Boolean = true
+    ): String {
         var text = input.lowercase()
         var up = BooleanArray(input.length) { input[it].isUpperCase() }
+        val amb = allowAmbiguous && opts.commonWord != null
 
         // 'z' sau phím dấu = phím dấu đó in thành chữ thường ("hoasz" -> "hoas").
         // Viết hoa tạm để vòng quét dấu bên dưới bỏ qua nó, hạ lại ở cuối.
@@ -232,8 +251,11 @@ class TelexEngine(
             for (i in 1 until text.length) if (isToneCommand(text, i)) lastCmd = i
         }
         val litIdx = if (toneLiteral) lastCmd else -1
+        var ambiguousUsed = false
         for (i in 1 until text.length) {
-            if (isToneCommand(text, i) && i != litIdx) {
+            val ambKey = amb && isAmbiguousTone(text, i)
+            if ((isToneCommand(text, i) || ambKey) && i != litIdx) {
+                if (ambKey) ambiguousUsed = true
                 hasCmd = true
                 toneIdx = toneMap.getValue(text[i])
             }
@@ -243,7 +265,8 @@ class TelexEngine(
             val nup = BooleanArray(text.length)
             var n = 0
             for (i in text.indices) {
-                if (!isToneCommand(text, i) || i == litIdx) {
+                val cmd = isToneCommand(text, i) || (amb && isAmbiguousTone(text, i))
+                if (!cmd || i == litIdx) {
                     sb.append(text[i])
                     nup[n++] = up[i]
                 }
@@ -360,6 +383,9 @@ class TelexEngine(
         // nguyên). Phím thanh đứng ngay trước phím đúp cũng là dấu
         // ("tiengse" = "tieng" + 's' + 'e'). Simple Telex không có
         // aa/ee/oo -> không bẻ.
+        // 1.4.5: đã tiêu thụ phím thanh -> đúp được cả nguyên âm đơn lẻ
+        // ("motoj" = "mot"+"o"+"j" -> "một"), vẫn qua cổng từ phổ biến
+        // ("photos" -> "phốt" không phổ biến -> giữ "photos").
         if (opts.method != ImeMethod.TELEX_SIMPLE && text.length > 1 &&
             text.last() in "aeo"
         ) {
@@ -372,8 +398,11 @@ class TelexEngine(
                 word = word.dropLast(1)
             }
             if (word.isNotEmpty() && !ViTone.isVowelChar(word.last())) {
-                applyRetroDouble(word, text.last())?.let {
-                    text = it
+                applyRetroDouble(
+                    word, text.last(), amb && (hasCmd || t2 > 0)
+                )?.let { (res, lone) ->
+                    if (lone) ambiguousUsed = true
+                    text = res
                     up = up.copyOf(text.length)
                     if (t2 > 0) toneIdx = t2
                 }
@@ -406,6 +435,13 @@ class TelexEngine(
             up = nup.copyOf(m)
         }
 
+        // 1.4.5: đã dùng phím ở vị trí lệ thường -> chỉ giữ kết quả khi nó
+        // là từ phổ biến còn phím thô thì không ("phari"->"phải"; "taxi"
+        // ->"tãi" không phổ biến -> chạy lại giữ 'x' làm chữ).
+        if (ambiguousUsed && !ambiguousOk(input, text)) {
+            return transformInternal(input, toneLiteral, allowAmbiguous = false)
+        }
+
         if (!up.any { it }) return text
         val sb = StringBuilder(text)
         for (i in text.indices) {
@@ -425,6 +461,20 @@ class TelexEngine(
         if (text[i - 1] == c || (i + 1 < text.length && text[i + 1] == c)) return false
         if (!ViTone.vowelBefore(text, i)) return false
         return i + 1 == text.length || !ViTone.isVowelChar(text[i + 1])
+    }
+
+    /** 1.4.5: phím dấu kẹt GIỮA hai nguyên âm ("phari" -> 'r') — lệ thường,
+     *  chỉ tiêu thụ khi kết quả qua cổng từ phổ biến (xem [ambiguousOk]). */
+    private fun isAmbiguousTone(text: String, i: Int): Boolean =
+        i > 0 && i + 1 < text.length && toneMap.containsKey(text[i]) &&
+            ViTone.isVowelChar(text[i - 1]) && ViTone.isVowelChar(text[i + 1])
+
+    /** Cổng 1.4.5: giữ kết quả từ phím lệ thường chỉ khi nó là từ phổ biến
+     *  còn phím thô thì không — "phải" phổ biến + "phari" không -> ăn;
+     *  "tãi" không phổ biến -> "taxi" giữ nguyên. */
+    private fun ambiguousOk(input: String, result: String): Boolean {
+        val known = opts.commonWord ?: return false
+        return known(result) && !known(input.lowercase())
     }
 
     companion object {

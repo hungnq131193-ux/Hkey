@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.5 (versionCode 25)
+
+- Phím thanh kẹt giữa hai nguyên âm giờ cũng là dấu, không còn in ra
+  chữ thừa: "phari"→"phải", "thari"→"thải", "hori"→"hỏi" — gõ đặt dấu
+  sớm ở giữa cụm nguyên âm hoạt động như UniKey.
+- 'a'/'e'/'o' cuối sau phụ âm đúp được cả nguyên âm ĐƠN LẺ khi đã có
+  phím thanh trong từ: "motoj"→"một", "totos"→"tốt", "botoj"→"bột".
+- Cổng an toàn: hai phím lệ thường trên chỉ được tiêu thụ khi kết quả
+  là từ phổ biến trong corpus (tần suất ≥ 200) hoặc từ user đã học, và
+  phím thô không phải từ phổ biến — "taxi" ("tãi" hiếm), "photos"
+  ("phốt" hiếm), "visa" ("vía" hiếm), "data", "delete", "banana",
+  "using", "music" đều giữ nguyên. Không có phím thanh thì nguyên âm
+  đơn lẻ vẫn luôn là chữ thật ("moto", "mono").
+
 ## 1.4.4 (versionCode 24)
 
 - Phím thanh đứng ngay trước phím đúp cuối cũng tính là dấu: gõ

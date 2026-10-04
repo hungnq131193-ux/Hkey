@@ -378,6 +378,51 @@ class LiveRestoreTest {
         }
     }
 
+    /** 1.4.5: phím lệ thường qua IME thật — model+từ điển nạp đồng bộ
+     *  (worker hàng đợi tay) nên cổng từ phổ biến đã sẵn. */
+    private class QueuePoster {
+        private val q = ArrayDeque<Runnable>()
+        val post: (Runnable) -> Unit = { q.addLast(it) }
+        fun pump() { while (q.isNotEmpty()) q.removeFirst().run() }
+    }
+
+    private fun readyHarness(): ImeHarness {
+        val qp = QueuePoster()
+        HKeyIME.workerPosterOverride = qp.post
+        val h = ImeHarness()
+        qp.pump(); h.idle() // nạp dict + model + commonSet đồng bộ
+        HKeyIME.workerPosterOverride = null
+        return h
+    }
+
+    @Test
+    fun ambiguousKeysThroughIme() {
+        val h = readyHarness()
+        h.type("phari")
+        h.idle()
+        assertEquals("phải", h.composing())
+        h.type(" ")
+        assertTrue(h.text().endsWith("phải "))
+        h.type("motoj")
+        h.idle()
+        assertEquals("một", h.composing())
+        h.type(" ")
+        assertTrue(h.text().endsWith("một "))
+    }
+
+    @Test
+    fun englishAmbiguousKeysStayRawThroughIme() {
+        val h = readyHarness()
+        for (w in listOf("taxi", "photos", "visa", "data")) {
+            h.type(w)
+            h.idle()
+            assertEquals("composing của $w phải là phím thô", w, h.composing())
+            h.type(" ")
+            h.idle()
+            assertTrue("sau space phải chốt $w", h.text().endsWith("$w "))
+        }
+    }
+
     @Test
     fun vietnameseStillTransforms() {
         val h = ImeHarness()

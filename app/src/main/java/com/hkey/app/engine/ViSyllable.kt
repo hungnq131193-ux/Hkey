@@ -39,7 +39,7 @@ object ViSyllable {
         "oa", "oă", "oe", "oi", "ôi", "ơi", "oo",
         "ua", "uă", "uâ", "ue", "uê", "ui", "uo", "uô", "uơ", "uy", "uu",
         "ya", "ye", "yê",
-        "ưa", "ưi", "ưu", "ươ",
+        "ưa", "ưi", "ưu", "ươ", "ưo",
         "ieu", "iêu", "yeu", "yêu",
         "uya", "uye", "uyê", "uyu",
         "uoi", "uôi", "uou",
@@ -50,7 +50,10 @@ object ViSyllable {
     /** Vần chỉ tồn tại khi có âm cuối ("ăn","muôn","tuyến"): dạng mở tương
      *  ứng là a/ua/ia... ("ă","muô","iế","hươ" không phải âm tiết). */
     private val closedOnlyNuclei = setOf(
-        "ă", "â", "iê", "oă", "uă", "uâ", "uô", "uyê", "ươ"
+        "ă", "â", "iê", "oă", "uă", "uâ", "uô", "uyê", "ươ",
+        // 1.4.0 (E2): "ưo" = trạng thái gõ dở VNI "u7o" -> "ươ" (giống "việ"
+        // -> "việt"); không phải âm tiết nên vẫn closed-only
+        "ưo"
     )
     private val codas = setOf("", "c", "ch", "m", "n", "ng", "nh", "p", "t")
 
@@ -102,5 +105,14 @@ object ViSyllable {
      *  sạch ("tesst"->"test") thì chốt đúng như hiển thị, không lộ phím thô. */
     fun restorable(raw: String, transformed: String): Boolean =
         transformed != raw && !isValid(transformed.lowercase()) &&
+            transformed.any { it.code > 127 }
+
+    /** 1.4.0 (E2): như restorable nhưng non-strict — giữa lúc gõ, vần
+     *  chỉ-đóng đứng trần ("việ") vẫn là trạng thái hợp lệ; chỉ live restore
+     *  kết quả hoàn toàn không phải âm tiết ("window" -> "windoư"). Kết quả
+     *  1 ký tự ("dd"->"đ", "aa"->"â") luôn là trạng thái gõ dở. */
+    fun liveRestorable(raw: String, transformed: String): Boolean =
+        transformed.length >= 2 && transformed != raw &&
+            !isValid(transformed.lowercase(), strict = false) &&
             transformed.any { it.code > 127 }
 }

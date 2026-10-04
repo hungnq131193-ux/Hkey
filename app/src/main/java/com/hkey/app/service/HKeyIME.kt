@@ -67,6 +67,7 @@ class HKeyIME : InputMethodService() {
     private var appliedNumRow = false
     private var appliedUiSig = "" // 1.3.2: theme+kiểu phím đang áp — đổi -> inflate lại
     private var optSound = true
+    private var optLiveRestore = true
     private var optVibrate = true
     private var contextCache: Pair<String, String>? = null // (từ trước, từ trước nữa)
     private val tailTracker = TailTracker(40) // bản sao cục bộ text đã commit — cắt IPC (6b)
@@ -286,6 +287,7 @@ class HKeyIME : InputMethodService() {
         shiftLocked = false
         consumeLearningCleared()
         optSound = prefs.getBoolean(SettingsKeys.SOUND, true)
+        optLiveRestore = prefs.getBoolean(SettingsKeys.LIVE_RESTORE, true)
         optVibrate = prefs.getBoolean(SettingsKeys.VIBRATE, true)
         optDoubleSpace = prefs.getBoolean(SettingsKeys.DOUBLE_SPACE, true)
         // Chỉ inflate lại khi đổi settings hoặc chưa có view — S2.
@@ -385,6 +387,18 @@ class HKeyIME : InputMethodService() {
         selStart = pos
         selEnd = pos
         expectedSels.push(pos)
+    }
+
+    /** 1.4.0 (E2): text hiển thị vùng composing — live restore giữ phím thô
+     *  khi transform ra chuỗi có glyph VN mà không phải âm tiết hợp lệ
+     *  ("window" gõ tiếp không hiện "windoư"); tokenGlued (url/email) không
+     *  áp. Mọi điểm hiển thị đi qua đây để đồng nhất. */
+    private fun renderComposing(): String {
+        val raw = currentComposingWord.toString()
+        val t = engine.transform(raw)
+        return if (optLiveRestore && !tokenGlued &&
+            ViSyllable.liveRestorable(raw, t)
+        ) raw else t
     }
 
     /** Điểm bắt đầu vùng text mới sẽ thay: có composing thì là đầu vùng
@@ -741,7 +755,7 @@ class HKeyIME : InputMethodService() {
         // kiểu Unikey "bỏ dấu tự do": "hoan" + s -> "hoán", "hon" + w -> "hơn".
         if (currentComposingWord.isEmpty() && c.first().isLowerCase() && resumeWord(c)) return
         currentComposingWord.append(c)
-        val transformed = engine.transform(currentComposingWord.toString())
+        val transformed = renderComposing()
         currentInputConnection?.let { icComposing(it, transformed) }
         requestSuggestions()
         if (BuildConfig.DEBUG) Log.d("HKeyIME", "handleCharacter ${(System.nanoTime() - t0) / 1_000} us")
@@ -788,8 +802,9 @@ class HKeyIME : InputMethodService() {
         // Fetch mới lúc đang composing có thể dính vùng composing — cắt ra để
         // tail chỉ giữ phần đã commit (tail theo dõi sẵn đã sạch).
         if (fresh && currentComposingWord.isNotEmpty()) {
-            val comp = engine.transform(currentComposingWord.toString())
-            if (before.endsWith(comp)) {
+            // 1.4.0: cắt đúng phần đang hiển thị (live restore có thể = phím thô)
+            val comp = currentDisplay
+            if (comp.isNotEmpty() && before.endsWith(comp)) {
                 before = before.dropLast(comp.length)
                 tailTracker.seed(before)
             }
@@ -818,7 +833,7 @@ class HKeyIME : InputMethodService() {
         // mới chính là phím dấu (gõ 's' sau "việt" -> "viết" vẫn đè tone được).
         val base = if (c[0].lowercaseChar() in "sfrxj") engine.stripTones(word) else word
         currentComposingWord.append(base).append(c)
-        val transformed = engine.transform(currentComposingWord.toString())
+        val transformed = renderComposing()
         contextCache = null // từ kề vừa vào buffer — ngữ cảnh phải dời lên trước nó
         val ic = currentInputConnection ?: return false
         ic.beginBatchEdit()
@@ -968,10 +983,13 @@ class HKeyIME : InputMethodService() {
         }
         if (currentComposingWord.isNotEmpty()) {
             // 1.7: xóa 1 ký tự HIỂN THỊ ("việt"⌫="việ"), không phải phím thô cuối
-            val r = engine.dropLastDisplayChar(currentComposingWord.toString())
+            // 1.4.0: đang live restore (hiển thị = phím thô) -> xoá phím thô cuối
+            val raw = currentComposingWord.toString()
+            val r = if (optLiveRestore && currentDisplay == raw) raw.dropLast(1)
+                else engine.dropLastDisplayChar(raw)
             currentComposingWord.clear()
             currentComposingWord.append(r)
-            val transformed = engine.transform(r)
+            val transformed = renderComposing()
             if (transformed.isEmpty()) {
                 currentInputConnection?.let { icCommit(it, "") }
             } else {
@@ -1049,7 +1067,7 @@ class HKeyIME : InputMethodService() {
             icDeleteBack(ic, tail)
             tailTracker.drop(tail)
             currentComposingWord.append(fix.raw)
-            icComposing(ic, engine.transform(fix.raw))
+            icComposing(ic, renderComposing())
         } finally {
             ic.endBatchEdit()
         }
@@ -1129,10 +1147,9 @@ class HKeyIME : InputMethodService() {
         val ctxPair = contextPairBeforeCursor()
         // 1.2: gợi ý trả chữ thường — áp lại kiểu hoa đang gõ / shift đầu câu
         val cased = when {
+            // 1.4.0: áp kiểu hoa theo đúng chữ trên màn hình (live restore = phím thô)
             currentComposingWord.isNotEmpty() ->
-                TextContext.matchCase(
-                    engine.transform(currentComposingWord.toString()), word
-                )
+                TextContext.matchCase(currentDisplay, word)
             shiftOn -> word.replaceFirstChar { it.uppercase() }
             else -> word
         }
@@ -1177,13 +1194,23 @@ class HKeyIME : InputMethodService() {
         if (currentComposingWord.isNotEmpty()) {
             // Đang gõ: giữa = bản sửa (nếu sai chính tả) hoặc từ hiện tại,
             // 2 bên = gợi ý hoàn thành (ưu tiên từ hay đi sau từ trước)
-            val current = engine.transform(currentComposingWord.toString())
+            // 1.4.0: "current" là chữ trên màn hình — live restore thì = phím thô
+            val raw = currentComposingWord.toString()
+            val transformed = engine.transform(raw)
+            val current = currentDisplay.ifEmpty { transformed }
+            val liveRestored = optLiveRestore && !tokenGlued &&
+                ViSyllable.liveRestorable(raw, transformed) && current == raw
             // 1.1: mảng trong url/email/ip -> không gợi ý, không sửa
             val completions = if (tokenGlued) emptyList()
                 else predictor.completions(current, ctx, ctx2)
-            // 1.3: kết quả không phải âm tiết VN -> đề nghị phím thô ("text")
-            val restore = if (tokenGlued) null else currentComposingWord.toString()
-                .takeIf { ViSyllable.restorable(it, current) }
+            // 1.4.0: đang live restore -> ô giữa đề nghị bản VN (chạm = chốt VN
+            // + học); còn lại giữ 1.3: kết quả không phải âm tiết VN -> đề
+            // nghị phím thô ("text")
+            val restore = when {
+                tokenGlued -> null
+                liveRestored -> transformed
+                else -> raw.takeIf { ViSyllable.restorable(it, current) }
+            }
             // 3.4: chỉ đề nghị sửa khi từ đang gõ không phải tiền tố hợp lệ
             val fix = restore
                 ?: if (tokenGlued || predictor.isPrefixOfKnownWord(current)) null

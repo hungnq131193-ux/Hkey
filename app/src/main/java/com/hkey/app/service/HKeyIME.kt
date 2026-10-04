@@ -568,7 +568,8 @@ class HKeyIME : InputMethodService() {
     }
 
     /** Điều phối mọi phím từ KeyboardView theo tag. */
-    private fun dispatchKey(k: KbKey) {
+    @androidx.annotation.VisibleForTesting
+    internal fun dispatchKey(k: KbKey) {
         when {
             k.tag.startsWith("ch:") -> handleCharacter(k.tag.removePrefix("ch:"))
             k.tag.startsWith("p:") -> handlePunct(k.tag.removePrefix("p:"))

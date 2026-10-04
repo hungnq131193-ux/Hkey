@@ -84,6 +84,11 @@ android {
         noCompress.add("bin")
     }
 
+    // 1.4.0: Robolectric unit test đọc resources/layout thật (T0)
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -98,4 +103,5 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
 }

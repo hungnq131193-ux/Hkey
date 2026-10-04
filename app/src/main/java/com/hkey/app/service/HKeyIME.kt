@@ -44,6 +44,7 @@ class HKeyIME : InputMethodService() {
 
     private val currentComposingWord = StringBuilder()
     private var lastCommittedWord = ""
+    private var lastCommitWasRaw = false // 1.4.0: từ vừa chốt là phím thô (tiếng Anh) — chặn resume
 
     /** Từ vừa bị auto-correct đổi: committed = từ app ghi, typed = từ user gõ,
      *  raw = buffer phím thô để mở lại vùng composing khi hoàn tác. */
@@ -753,7 +754,8 @@ class HKeyIME : InputMethodService() {
         consumeShift() // caps lock (shiftLocked) thì không tự tắt
         // Con trỏ sát một từ đã gõ (không có space) -> nối phím vào từ đó,
         // kiểu Unikey "bỏ dấu tự do": "hoan" + s -> "hoán", "hon" + w -> "hơn".
-        if (currentComposingWord.isEmpty() && c.first().isLowerCase() && resumeWord(c)) return
+        // 1.4.0: chỉ chặn caps lock; shift 1 lần vẫn cho resume.
+        if (currentComposingWord.isEmpty() && !shiftLocked && resumeWord(c)) return
         currentComposingWord.append(c)
         val transformed = renderComposing()
         currentInputConnection?.let { icComposing(it, transformed) }
@@ -814,10 +816,16 @@ class HKeyIME : InputMethodService() {
     }
 
     /** 'w'/'z' áp thẳng lên từ đã commit; các phím khác kéo từ về vùng
-     *  composing (bỏ tone khỏi buffer) rồi gõ tiếp như thường. */
+     *  composing (bỏ tone khỏi buffer) rồi gõ tiếp như thường.
+     *  1.4.0 (E3): không resume trên token dính url/email, không resume từ
+     *  vừa commit dạng phím thô (tiếng Anh — phím mới là chữ mới), và chỉ
+     *  resume khi từ kề là âm tiết VN hợp lệ (non-strict). */
     private fun resumeWord(c: String): Boolean {
         val word = adjacentWordBeforeCursor()
         if (word.isEmpty()) return false
+        if (TextContext.gluedToken(tailNow())) return false
+        if (word == lastCommittedWord && lastCommitWasRaw) return false
+        if (!ViSyllable.isValid(word.lowercase(), strict = false)) return false
         when (c[0]) {
             // 1.3.4: chỉ áp 'w' khi ra âm tiết VN hợp lệ — "sho"+w ra "shơ"
             // (không phải âm tiết) phải rơi về đường buffer để commit trả
@@ -937,6 +945,9 @@ class HKeyIME : InputMethodService() {
         if (allowCorrection) tailTracker.append(word) else tailTracker.invalidate()
         if (!tokenGlued) learn(prev, word, prev2)
         lastCommittedWord = word
+        // 1.4.0: từ chốt là chính phím thô (restorable) -> đánh dấu để
+        // resumeWord không kéo tiếng Anh về buffer biến dạng
+        lastCommitWasRaw = word === raw
         lastAutoFix = if (fixed != null) AutoFix(word, typed, raw) else null
         currentComposingWord.clear()
         contextCache = null

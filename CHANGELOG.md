@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.5.3 (versionCode 29)
+
+- Gõ đúng từ hơn: vần trần mơ hồ hai dạng giờ chọn theo từ phổ biến
+  trong mô hình — "nuocs" ra "nước" (không còn "nuốc"), "thuosc" ra
+  "thước" (không còn "thuốc"), "muojn" ra "mượn".
+- Phím dấu kẹt giữa 'w' và nguyên âm được nhận đúng — "bwsowc" ra
+  "bước", không còn in phím thô.
+- Bỏ dấu giữ chừng an toàn hơn: không tự bẻ dấu khi chưa có từ điển,
+  khi chưa gõ phím dấu, hay khi phím thô đã là từ đúng — chữ tiếng
+  Anh/mã giữ nguyên ASCII.
+- Phím cứng: không còn đọc cài đặt mỗi lần bấm — giảm giật khi gõ
+  bàn phím ngoài.
+
 ## 1.5.2 (versionCode 28)
 
 - Menu cài đặt làm lại đồng bộ: mọi màn con chia nhóm có tiêu đề, nằm

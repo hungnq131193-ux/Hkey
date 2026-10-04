@@ -137,6 +137,10 @@ class VniEngine(
             }.joinToString("")
         }
 
+        // 1.5.3: hoàn thiện dấu phụ bắt buộc của vần trần như Telex
+        // ("tien1" -> "tiến", "duoc5" -> "được") — cùng độ dài, mask giữ.
+        text = ViSyllable.repairBareNucleus(text, opts.commonWord, opts.commonRank)
+
         if (!up.any { it }) return text
         val sb = StringBuilder(text)
         for (k in text.indices) {

@@ -453,6 +453,19 @@ class ContextPredictor {
         return s
     }
 
+    /** 1.5.3: như commonWords nhưng kèm tần suất — phân giải vần mơ hồ
+     *  ("nuocs" -> "nước" thay "nuốc"). Từ học được rank cực cao để thắng
+     *  mọi từ điển (user đã gõ đúng dạng đó). */
+    fun commonWordFreqs(): Map<String, Int> {
+        val m = HashMap<String, Int>()
+        for (e in vocabulary.values) {
+            if (e.freq >= COMMON_FREQ || e.personal > 0) {
+                m[e.word] = if (e.personal > 0) Int.MAX_VALUE else e.freq
+            }
+        }
+        return m
+    }
+
     private companion object {
         /** Ngưỡng "từ phổ biến" cho cổng phím lệ thường Telex (1.4.5):
          *  trên tần suất file từ điển (100) và trên từ hiếm nhưng xung đột

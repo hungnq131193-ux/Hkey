@@ -80,6 +80,7 @@ class HKeyIME : InputMethodService() {
     private var optAutoCap = true       // U3: AUTO_CAP
     private var optSpaceSwipe = true    // U3: SPACE_SWIPE
     private var optLongpressMs = 360    // U3: LONGPRESS_MS
+    private var optHwKeyboard = true    // H1: HW_KEYBOARD — cache, khỏi đọc prefs mỗi key event
     private var contextCache: Pair<String, String>? = null // (từ trước, từ trước nữa)
     private val tailTracker = TailTracker(40) // bản sao cục bộ text đã commit — cắt IPC (6b)
     private var currentInputType = 0 // inputType của ô đang focus (cờ CAP_* cho capsWanted)
@@ -118,7 +119,8 @@ class HKeyIME : InputMethodService() {
     @Volatile private var predictorReady = false // P5: index đã install
     // 1.4.5: tập từ phổ biến cho cổng phím lệ thường Telex — publish trên
     // worker cùng index; đọc trên main thread qua EngineOptions.commonWord.
-    @Volatile private var commonSet: Set<String> = emptySet()
+    // 1.5.3: kèm tần suất để phân giải vần mơ hồ (uo -> uô/ươ).
+    @Volatile private var commonFreqs: Map<String, Int> = emptyMap()
     private var suggestGen = 0 // số hiệu request gợi ý — kết quả cũ bị bỏ
 
     private val prefs get() = getSharedPreferences(SettingsKeys.PREFS, Context.MODE_PRIVATE)
@@ -173,7 +175,7 @@ class HKeyIME : InputMethodService() {
             val idx = predictor.buildIndexFrom(snapshot)
             if (destroyed) return@post
             predictor.installIndex(idx, version)
-            commonSet = predictor.commonWords() // 1.4.5: cổng phím lệ thường
+            commonFreqs = predictor.commonWordFreqs() // 1.4.5/1.5.3: cổng phím lệ thường + rank
             repeatHandler.post { predictorReady = true }
         }
     }
@@ -204,7 +206,7 @@ class HKeyIME : InputMethodService() {
     /** Điều kiện chung xử lý phím cứng: bật trong settings, có InputConnection,
      *  không rawMode, sự kiện từ phím vật lý thật (không phím hệ thống/ảo). */
     private fun hwGate(event: KeyEvent): Boolean =
-        prefs.getBoolean(SettingsKeys.HW_KEYBOARD, true) &&
+        optHwKeyboard &&
             currentInputConnection != null && !rawMode &&
             HardwareKeys.usable(event)
 
@@ -292,6 +294,7 @@ class HKeyIME : InputMethodService() {
         optAutoCap = prefs.getBoolean(SettingsKeys.AUTO_CAP, true)
         optSpaceSwipe = prefs.getBoolean(SettingsKeys.SPACE_SWIPE, true)
         optLongpressMs = prefs.getInt(SettingsKeys.LONGPRESS_MS, 360)
+        optHwKeyboard = prefs.getBoolean(SettingsKeys.HW_KEYBOARD, true)
         kbView?.let {
             it.soundEnabled = optSound
             it.vibrateEnabled = optVibrate
@@ -404,7 +407,8 @@ class HKeyIME : InputMethodService() {
             spellCheckTone = prefs.getBoolean(SettingsKeys.SPELL_CHECK, true),
             // 1.4.5: đọc live — set rỗng trước khi model nạp xong thì mọi
             // phím lệ thường đều giữ nguyên (hành vi cũ, an toàn).
-            commonWord = { w -> commonSet.contains(w) }
+            commonWord = { w -> commonFreqs.containsKey(w) },
+            commonRank = { w -> commonFreqs[w] ?: 0 }
         )
         val macroStr = prefs.getString(SettingsKeys.MACROS, "") ?: ""
         val sig = listOf(opts.method, opts.newToneStyle, opts.spellCheckTone, macroStr)
@@ -439,6 +443,7 @@ class HKeyIME : InputMethodService() {
         optAutoCap = prefs.getBoolean(SettingsKeys.AUTO_CAP, true)
         optSpaceSwipe = prefs.getBoolean(SettingsKeys.SPACE_SWIPE, true)
         optLongpressMs = prefs.getInt(SettingsKeys.LONGPRESS_MS, 360)
+        optHwKeyboard = prefs.getBoolean(SettingsKeys.HW_KEYBOARD, true)
         // Chỉ inflate lại khi đổi settings hoặc chưa có view — S2.
         val kh = prefs.getInt(SettingsKeys.KB_HEIGHT, 100)
         val ks = prefs.getInt(SettingsKeys.KB_SIDE, 0)
@@ -541,7 +546,7 @@ class HKeyIME : InputMethodService() {
             // nhau: chỉ chữ cái, độ dài hợp lý).
             val w = word.lowercase().trim()
             if (w.isNotEmpty() && w.length <= 24 && w.all { it.isLetter() }) {
-                repeatHandler.post { commonSet = commonSet + w }
+                repeatHandler.post { commonFreqs = commonFreqs + (w to Int.MAX_VALUE) }
             }
             markLearnedDirty()
         }

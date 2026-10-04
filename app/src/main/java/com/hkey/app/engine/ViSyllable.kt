@@ -147,4 +147,114 @@ object ViSyllable {
         s.any { ViGlyphs.bareChar(it).lowercaseChar() in VOWELS }
 
     private const val VOWELS = "aăâeêioôơuưy"
+
+    // -------------------------------------------------- 1.5.3: dấu phụ bắt buộc
+
+    /** Vần TRẦN không tồn tại trong chính tả -> dạng có dấu phụ.
+     *  Khóa = nucleus trần + "|" + (coda rỗng ? "" : "C"). "ie"/"ye"/"uye"
+     *  chỉ trần được khi mở; "ue"/"uu"/"uou"/"uo" mở chưa bao giờ trần. */
+    internal val forcedMarks = mapOf(
+        "ie|C" to listOf(listOf('i', 'ê')),
+        "ye|C" to listOf(listOf('y', 'ê')),
+        "uye|C" to listOf(listOf('u', 'y', 'ê')),
+        "ieu|" to listOf(listOf('i', 'ê', 'u')),
+        "yeu|" to listOf(listOf('y', 'ê', 'u')),
+        "ue|" to listOf(listOf('u', 'ê')),
+        "ue|C" to listOf(listOf('u', 'ê')),
+        "uu|" to listOf(listOf('ư', 'u')),
+        "uou|" to listOf(listOf('ư', 'ơ', 'u')),
+        "uo|" to listOf(listOf('u', 'ơ')),
+        // "uo"+coda mơ hồ uô/ươ ("thuốc"/"được") — cổng từ điển quyết
+        "uo|C" to listOf(listOf('u', 'ô'), listOf('ư', 'ơ')),
+        "uoi|" to listOf(listOf('u', 'ô', 'i'), listOf('ư', 'ơ', 'i'))
+    )
+
+    /** Tách word thành (độ dài onset, nucleus, coda) theo đúng thứ tự
+     *  duyệt của isValid; null = không tách được. */
+    internal fun split(plain: String): Triple<Int, String, String>? {
+        for (onset in onsets) {
+            if (!plain.startsWith(onset)) continue
+            val rhyme = plain.removePrefix(onset)
+            for (len in rhyme.length downTo 1) {
+                val nuc = rhyme.substring(0, len)
+                val coda = rhyme.substring(len)
+                if (nuc in nuclei && coda in codas) {
+                    return Triple(onset.length, nuc, coda)
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * 1.5.3 — hoàn thiện dấu phụ bắt buộc của vần trần (gõ tắt bỏ qua
+     *  aa/ee/oo/w): "tiengs" -> "tiếng", "bienr" -> "biển", "dduocj" ->
+     *  "được" (cổng từ phổ biến chọn uô/ươ), "muoif" -> "muồi".
+     *  Chỉ đụng vần hoàn toàn trần mà dạng trần đó không tồn tại trong
+     *  chính tả — vần trần hợp lệ ("bán","bón") giữ nguyên. Giữ thanh
+     *  trên từng ký tự được bẻ; độ dài không đổi. */
+    fun repairBareNucleus(
+        word: String,
+        commonWord: ((String) -> Boolean)? = null,
+        commonRank: ((String) -> Int)? = null
+    ): String {
+        // Repair cần từ điển để phân giải nhánh (uô/ươ) và bảo vệ từ thật
+        // ("kủo"); không có từ điển thì không đoán.
+        if (commonWord == null) return word
+        // Chỉ sửa khi user đã gõ phím dấu (kết quả có thanh) — "diet"/"viet"
+        // không phím dấu nào thì giữ nguyên, không bị bẻ thành "diêt"/"viêt".
+        if (word.none { decomp(it).second > 0 }) return word
+        // Từ trần đã là từ thật ("kủo") -> giữ nguyên
+        if (commonWord.invoke(word)) return word
+        val plain = word.map { syllableChar(it) }.joinToString("")
+        val (onsetLen, nuc, coda) = split(plain) ?: return word
+        if (nuc.any { it in ViGlyphs.markedVowels }) return word // đã có mũ/móc
+        val candidates = forcedMarks["$nuc|${if (coda.isEmpty()) "" else "C"}"]
+            ?: return word
+        val chosen = if (candidates.size == 1) {
+            candidates[0]
+        } else {
+            // cả hai dạng đều viết được -> chọn theo tần suất từ điển
+            // ("nuocs" -> "nước" thắng "nuốc"); không có rank thì nhánh đầu
+            // tiên khớp commonWord như cũ.
+            val words2 = candidates.map { cand ->
+                word.substring(0, onsetLen) +
+                    buildNucleus(word, onsetLen, cand) +
+                    word.substring(onsetLen + nuc.length)
+            }
+            val hit = if (commonRank != null) {
+                val best = words2.indices.maxByOrNull { commonRank(words2[it]) }
+                if (best != null && commonRank(words2[best]) > 0) best else -1
+            } else {
+                words2.indexOfFirst { commonWord?.invoke(it) == true }
+            }
+            candidates[if (hit >= 0) hit else 0]
+        }
+        return word.substring(0, onsetLen) +
+            buildNucleus(word, onsetLen, chosen) +
+            word.substring(onsetLen + nuc.length)
+    }
+
+    /** Dựng nucleus đã bẻ dấu phụ. Tone đang ở ký tự sẽ thành nguyên âm
+     *  trần thì dời sang nguyên âm có dấu phụ cuối ("huef" -> "huề" chứ
+     *  không "hùê", "chuyesn" -> "chuyến" chứ không "chuýên"). */
+    internal fun buildNucleus(word: String, onsetLen: Int, target: List<Char>): String {
+        var tonePos = -1
+        var tone = 0
+        for (j in target.indices) {
+            val t = decomp(word[onsetLen + j]).second
+            if (t > 0) { tonePos = j; tone = t }
+        }
+        if (tonePos >= 0 && target[tonePos] !in ViGlyphs.markedVowels) {
+            val m = target.indexOfLast { it in ViGlyphs.markedVowels }
+            if (m >= 0) tonePos = m
+        }
+        val sb = StringBuilder(target.size)
+        for (j in target.indices) {
+            sb.append(
+                ViGlyphs.vowelBase.getValue(target[j])[if (j == tonePos) tone else 0]
+            )
+        }
+        return sb.toString()
+    }
 }

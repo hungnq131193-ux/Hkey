@@ -32,13 +32,15 @@ class ResumeWordTest {
 
     @Test
     fun validSyllableStillResumes() {
-        // "Viet" commit thường (không phải raw) -> 'j' resume, đè dấu nặng
+        // "Viet" commit thường (không phải raw) -> 'j' resume, đè dấu nặng.
+        // 1.5.3: vần trần "ie" được hoàn thiện dấu phụ -> "Việt" (đúng chính
+        // tả), không còn "Viẹt".
         val h = ImeHarness(initialText = "ok Viet")
         h.type("j")
         h.idle()
-        assertEquals("Viẹt", h.composing())
+        assertEquals("Việt", h.composing())
         h.type(" ")
-        assertTrue(h.text().endsWith("Viẹt "))
+        assertTrue(h.text().endsWith("Việt "))
     }
 
     @Test

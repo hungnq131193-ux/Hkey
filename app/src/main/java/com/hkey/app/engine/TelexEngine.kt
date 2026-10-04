@@ -443,6 +443,11 @@ class TelexEngine(
             up = nup.copyOf(m)
         }
 
+        // 1.5.3: hoàn thiện dấu phụ bắt buộc của vần trần không tồn tại
+        // trong chính tả ("tiengs"->"tiếng", "dduocj"->"được" nhờ cổng từ
+        // phổ biến) — thay ký tự cùng độ dài, mask hoa không đổi.
+        text = ViSyllable.repairBareNucleus(text, opts.commonWord, opts.commonRank)
+
         // 1.4.5: đã dùng phím ở vị trí lệ thường -> chỉ giữ kết quả khi nó
         // là từ phổ biến còn phím thô thì không ("phari"->"phải"; "taxi"
         // ->"tãi" không phổ biến -> chạy lại giữ 'x' làm chữ).
@@ -472,10 +477,13 @@ class TelexEngine(
     }
 
     /** 1.4.5: phím dấu kẹt GIỮA hai nguyên âm ("phari" -> 'r') — lệ thường,
-     *  chỉ tiêu thụ khi kết quả qua cổng từ phổ biến (xem [ambiguousOk]). */
+     *  chỉ tiêu thụ khi kết quả qua cổng từ phổ biến (xem [ambiguousOk]).
+     *  1.5.3: 'w' cũng là phím nguyên âm (ư/aw/ow/uw) nên phím dấu kẹt giữa
+     *  'w' và nguyên âm cũng ăn ("bwsowc" -> "bước"). */
     private fun isAmbiguousTone(text: String, i: Int): Boolean =
         i > 0 && i + 1 < text.length && toneMap.containsKey(text[i]) &&
-            ViTone.isVowelChar(text[i - 1]) && ViTone.isVowelChar(text[i + 1])
+            (ViTone.isVowelChar(text[i - 1]) || text[i - 1] == 'w') &&
+            (ViTone.isVowelChar(text[i + 1]) || text[i + 1] == 'w')
 
     /** Cổng 1.4.5: giữ kết quả từ phím lệ thường chỉ khi nó là từ phổ biến
      *  còn phím thô thì không — "phải" phổ biến + "phari" không -> ăn;

@@ -22,7 +22,12 @@ data class EngineOptions(
      *  "motoj"). Chỉ tiêu thụ phím lệ thường khi kết quả là từ phổ biến —
      *  "phari"->"phải" nhưng "taxi" giữ nguyên ("tãi" không phổ biến).
      *  null = không tiêu thụ phím lệ thường (mặc định, giữ hành vi cũ). */
-    val commonWord: ((String) -> Boolean)? = null
+    val commonWord: ((String) -> Boolean)? = null,
+    /** 1.5.3: tần suất tương đối của từ đã biết — chọn nhánh khi vần trần
+     *  mơ hồ hai dạng ("nuocs" -> "nước" chứ không "nuốc"). Lớn hơn = phổ
+     *  biến hơn; 0/âm = không có trong từ điển. null = chọn nhánh đầu tiên
+     *  khớp commonWord (hành vi cũ). */
+    val commonRank: ((String) -> Int)? = null
 )
 
 /** Giao diện chung của bộ gõ — HKeyIME giữ engine qua interface này (2.x). */

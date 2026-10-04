@@ -19,6 +19,13 @@ class TelexEngine(
     private val vowelBase = ViGlyphs.vowelBase
     private val decomposed = ViGlyphs::decomposed
 
+    /** 1.4.0 (C3): cache 1 mục — render/commit/suggest gọi transform lặp
+     *  lại cùng raw, chỉ biến đổi lại khi buffer thật sự đổi. @Volatile:
+     *  có thể gọi từ worker thread (SuggestWorker); cặp giá trị là immutable
+     *  nên đọc/ghi tham chiếu là atomic, race chỉ làm mất cache (an toàn). */
+    @Volatile
+    private var lastTransform: Pair<String, String>? = null
+
     private val toneMap = mapOf(
         's' to 1, // Sắc
         'f' to 2, // Huyền
@@ -119,22 +126,25 @@ class TelexEngine(
     private fun replaceMasked(
         text: String, up: BooleanArray, from: String, to: String
     ): Pair<String, BooleanArray> {
-        var t = text
-        var u = up
-        var i = t.indexOf(from)
-        while (i >= 0) {
-            val m = (i until i + from.length).any { u[it] }
-            t = t.substring(0, i) + to + t.substring(i + from.length)
-            u = BooleanArray(t.length) { j ->
-                when {
-                    j < i -> u[j]
-                    j == i -> m
-                    else -> u[j - 1 + from.length]
-                }
-            }
-            i = t.indexOf(from, i + 1)
+        if (!text.contains(from)) return text to up
+        // 1.4.0 (C4): quét 1 lượt + 1 StringBuilder/BooleanArray thay vì
+        // dựng lại text+mask cho mỗi lần khớp. `to` luôn là ký tự VN nên
+        // không thể tạo match mới tràn lên match trước — quét tiếp sau đuôi
+        // match tương đương indexOf trên text đã thay.
+        val sb = StringBuilder(text.length + 4)
+        val nup = BooleanArray(text.length + 4)
+        var n = 0
+        var i = 0
+        var m = text.indexOf(from)
+        while (m >= 0) {
+            while (i < m) { nup[n] = up[i]; sb.append(text[i]); n++; i++ }
+            nup[n] = (m until m + from.length).any { up[it] }
+            sb.append(to); n++
+            i = m + from.length
+            m = text.indexOf(from, i)
         }
-        return t to u
+        while (i < text.length) { nup[n] = up[i]; sb.append(text[i]); n++; i++ }
+        return sb.toString() to nup.copyOf(n)
     }
 
     /** Thay `from` thành `to` CÙNG ĐỘ DÀI (Quick Telex "tt"->"th") — mask hoa
@@ -142,17 +152,22 @@ class TelexEngine(
     private fun replaceMaskedSameLen(
         text: String, up: BooleanArray, from: String, to: String
     ): Pair<String, BooleanArray> {
-        var t = text
-        var i = t.indexOf(from)
-        while (i >= 0) {
-            t = t.substring(0, i) + to + t.substring(i + from.length)
-            i = t.indexOf(from, i + to.length)
+        var m = text.indexOf(from)
+        if (m < 0) return text to up
+        val sb = StringBuilder(text.length)
+        var i = 0
+        while (m >= 0) {
+            sb.append(text, i, m).append(to)
+            i = m + from.length
+            m = text.indexOf(from, i)
         }
-        return t to up
+        sb.append(text, i, text.length)
+        return sb.toString() to up
     }
 
     override fun transform(input: String): String {
         if (input.isEmpty()) return ""
+        lastTransform?.let { if (it.first == input) return it.second }
         val out = transformInternal(input, false)
         // 2.x spell-check: phím dấu là ký tự cuối và kết quả không phải âm
         // tiết VN ("sachf"->"sàch" sai coda) -> in phím dấu thô ("sachf").
@@ -163,8 +178,9 @@ class TelexEngine(
             // thái gõ dở hợp lệ, không in phím dấu thô
             !ViSyllable.isValid(out.lowercase(), strict = false)
         ) {
-            return transformInternal(input, true)
+            return transformInternal(input, true).also { lastTransform = input to it }
         }
+        lastTransform = input to out
         return out
     }
 
@@ -176,21 +192,32 @@ class TelexEngine(
 
         // 'z' sau phím dấu = phím dấu đó in thành chữ thường ("hoasz" -> "hoas").
         // Viết hoa tạm để vòng quét dấu bên dưới bỏ qua nó, hạ lại ở cuối.
+        var zEscaped = false
         if (text.last() == 'z' && text.length >= 2 && toneMap.containsKey(text[text.length - 2])) {
             text = text.dropLast(1)
             up = up.copyOf(text.length)
             text = text.substring(0, text.length - 1) + text.last().uppercaseChar()
+            zEscaped = true
         }
 
         // Phím dấu cuối cùng sau nguyên âm là dấu đang dùng; các phím dấu trước
         // đó (đã tiêu thụ) bị gỡ — nên gõ dấu mới đè lên dấu cũ. toneLiteral:
         // phím dấu cuối giữ làm chữ (đường spell-check 2.x).
+        // 1.4.0 (C4): quét 1 lượt, không tạo List chỉ mục trung gian.
         var toneIdx = 0
-        val cmds = (1 until text.length).filter { isToneCommand(text, it) }
-        if (cmds.isNotEmpty()) {
-            val litIdx = if (toneLiteral) cmds.last() else -1
-            val eff = if (toneLiteral) cmds.dropLast(1) else cmds
-            if (eff.isNotEmpty()) toneIdx = toneMap.getValue(text[eff.last()])
+        var hasCmd = false
+        var lastCmd = -1
+        if (toneLiteral) {
+            for (i in 1 until text.length) if (isToneCommand(text, i)) lastCmd = i
+        }
+        val litIdx = if (toneLiteral) lastCmd else -1
+        for (i in 1 until text.length) {
+            if (isToneCommand(text, i) && i != litIdx) {
+                hasCmd = true
+                toneIdx = toneMap.getValue(text[i])
+            }
+        }
+        if (hasCmd || litIdx >= 0) {
             val sb = StringBuilder(text.length)
             val nup = BooleanArray(text.length)
             var n = 0
@@ -204,10 +231,29 @@ class TelexEngine(
             up = nup.copyOf(n)
         }
 
-        text = text.lowercase() // hạ lại ký tự đã escape bằng 'z'
+        if (zEscaped) text = text.lowercase() // hạ lại ký tự đã escape bằng 'z'
+
+        // 1.4.0 (C4): pre-scan 1 lượt — hai vòng dưới chỉ cần chạy khi có
+        // cặp ký tự lặp (phím dấu đúp, run >=3 của aeod, hay "ww"), đa số
+        // từ không có nên bỏ qua luôn cấp phát StringBuilder/BooleanArray.
+        var hasRun = false
+        run {
+            var i = 1
+            var rpt = 1
+            while (i < text.length) {
+                if (text[i] == text[i - 1]) {
+                    rpt++
+                    if ((toneMap.containsKey(text[i]) && rpt >= 2) ||
+                        (text[i] == 'w' && rpt >= 2) ||
+                        (text[i] in "aeod" && rpt >= 3)
+                    ) { hasRun = true; break }
+                } else rpt = 1
+                i++
+            }
+        }
 
         // Cặp đúp phím dấu còn lại = chữ thật ("bass" -> "bas")
-        run {
+        if (hasRun) run {
             val sb = StringBuilder(text.length)
             val nup = BooleanArray(text.length)
             var n = 0
@@ -230,7 +276,7 @@ class TelexEngine(
         // Gõ lặp phím dấu phụ hủy về chữ thật: "aaa"->aa, "ddd"->dd,
         // "ww"->w (1.3). BREAK ngăn cặp literal bị gộp lại; WLITERAL đứng
         // thay 'w' để khỏi bị các rule w (ư/aw/ow/uw) ăn mất.
-        run {
+        if (hasRun) run {
             val sb = StringBuilder(text.length + 4)
             val nup = BooleanArray(text.length + 4)
             var n = 0

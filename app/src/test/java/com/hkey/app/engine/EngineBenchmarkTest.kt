@@ -89,4 +89,91 @@ class EngineBenchmarkTest {
         File("build/baseline-benchmark.txt").writeText(report)
         println("\n$report")
     }
+
+    /** 1.4.0 (P3/C4): thời gian transform Telex trung bình trên 10k lần gọi
+     *  với từ điển thật — in ra để so sánh trước/sau khi tối ưu. */
+    @Test
+    fun transformBench() {
+        val dict = dictFile().readLines().map { it.trim() }.filter { it.isNotEmpty() }
+        val keys = dict.mapNotNull { telexKeys(it) }
+        val e = TelexEngine()
+        repeat(3) { keys.forEach { e.transform(it) } } // warm-up
+        // min-of-7: máy shared nhiễu lớn, min là phổ sạch nhất
+        val best = LongArray(7) {
+            measureNanoTime {
+                var i = 0
+                while (i < 10_000) {
+                    e.transform(keys[i % keys.size]); i++
+                }
+            }
+        }.min()
+        println("\ntransform x10k (${keys.size} phím): ${best / 1_000_000.0} ms | trung bình ${best / 10_000.0} ns/từ (min-of-7)")
+
+        // Workload thật trong IME: render + suggest + commit gọi transform
+        // 3 lần trên cùng raw mỗi phím — cache 1 mục nên 2 lần sau gần free.
+        val e2 = TelexEngine()
+        val hit = LongArray(7) {
+            measureNanoTime {
+                var i = 0
+                while (i < 10_000) {
+                    val k = keys[i % keys.size]
+                    e2.transform(k); e2.transform(k); e2.transform(k)
+                    i++
+                }
+            }
+        }.min()
+        println("workload 3-call/phím x10k: ${hit / 1_000_000.0} ms | trung bình ${hit / 30_000.0} ns/gọi (min-of-7)")
+    }
+
+    private fun decomp(c: Char): Pair<Char, Int> {
+        val groups = mapOf(
+            'a' to "aáàảãạ", 'ă' to "ăắằẳẵặ", 'â' to "âấầẩẫậ",
+            'e' to "eéèẻẽẹ", 'ê' to "êếềểễệ",
+            'i' to "iíìỉĩị",
+            'o' to "oóòỏõọ", 'ô' to "ôốồổỗộ", 'ơ' to "ơớờởỡợ",
+            'u' to "uúùủũụ", 'ư' to "ưứừửữự",
+            'y' to "yýỳỷỹỵ"
+        )
+        for ((b, v) in groups) {
+            val i = v.indexOf(c)
+            if (i >= 0) return b to i
+        }
+        return c to 0
+    }
+
+    /** Mã hoá Telex giống LiveRestoreTest: "ươ"->"uow", đ->dd, â->aa...;
+     *  dấu thanh chèn sau cụm nguyên âm. */
+    private fun telexKeys(word: String): String? {
+        var tone = 0
+        var vowelEnd = 0
+        val sb = StringBuilder()
+        var i = 0
+        while (i < word.length) {
+            val (base, t) = decomp(word[i])
+            if (t > 0) {
+                if (tone > 0) return null
+                tone = t
+            }
+            when {
+                base == 'đ' -> sb.append("dd")
+                base == 'ư' && i + 1 < word.length && decomp(word[i + 1]).first == 'ơ' -> {
+                    sb.append("uow"); i++; vowelEnd = sb.length
+                }
+                base in "aăâeêioôơuưy" -> {
+                    sb.append(
+                        when (base) {
+                            'ă' -> "aw"; 'â' -> "aa"; 'ê' -> "ee"
+                            'ô' -> "oo"; 'ơ' -> "ow"; 'ư' -> "w"
+                            else -> base.toString()
+                        }
+                    )
+                    vowelEnd = sb.length
+                }
+                else -> sb.append(base)
+            }
+            i++
+        }
+        if (tone > 0) sb.insert(vowelEnd, "sfrxj"[tone - 1])
+        return sb.toString()
+    }
 }

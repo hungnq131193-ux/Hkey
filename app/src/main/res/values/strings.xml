@@ -75,11 +75,19 @@
     <string name="st_macro_keep">Tiếp tục sửa</string>
     <string name="st_macro_leave">Bỏ</string>
 
+    <!-- Nhóm trên Home -->
+    <string name="st_grp_input">Nhập liệu</string>
+    <string name="st_grp_ui">Giao diện &amp; điều khiển</string>
+    <string name="st_grp_data">Dữ liệu &amp; ứng dụng</string>
+    <string name="st_theme_system">Theo hệ thống</string>
+
     <!-- Dữ liệu -->
     <string name="st_learned">Đã học %1$d từ</string>
     <string name="st_clear_learn">Xoá dữ liệu học</string>
     <string name="st_clear_learn_msg">Xoá toàn bộ từ bàn phím đã học?</string>
     <string name="st_backup">Sao lưu cài đặt</string>
+    <string name="st_backup_ok">Đã sao lưu cài đặt</string>
+    <string name="st_backup_fail">Sao lưu thất bại</string>
     <string name="st_restore">Khôi phục</string>
     <string name="st_restore_bad">File không hợp lệ</string>
     <string name="st_restore_ok">Đã khôi phục %1$d cài đặt</string>

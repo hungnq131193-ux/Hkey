@@ -375,6 +375,7 @@ class HKeyIME : InputMethodService() {
 
     override fun onStartInput(info: EditorInfo, restarting: Boolean) {
         super.onStartInput(info, restarting)
+        fixGen++ // 1.5.0: đổi ô -> huỷ bản sửa nền đang bay, không sửa lùi ô mới
         rawMode = FieldMode.isRaw(info.inputType)
         noSuggest = FieldMode.noSuggestions(info.inputType)
         noLearning = noSuggest ||
@@ -527,10 +528,12 @@ class HKeyIME : InputMethodService() {
      *  NO_SUGGESTIONS (1.4). 4.x: không học từ trông như typo (lệch 1 ký tự
      *  so với từ điển, không phải âm tiết VN, chưa từng biết).
      *  1.3: truyền thêm từ trước nữa (prev2) để học trigram cá nhân. */
-    private fun learn(prev: String, word: String, prev2: String = "") {
+    /** [force]=true: user chủ động xác nhận từ (hoàn tác auto-fix) — bỏ
+     *  qua bộ lọc looksLikeTypo để từ được học thật, không bị sửa lại. */
+    private fun learn(prev: String, word: String, prev2: String = "", force: Boolean = false) {
         // P1: recordSequence chạy trên worker — main chỉ gửi việc.
         worker.post {
-            if (noLearning || predictor.looksLikeTypo(word)) return@post
+            if (noLearning || (!force && predictor.looksLikeTypo(word))) return@post
             predictor.recordSequence(prev, word, prev2 = prev2)
             markLearnedDirty()
         }
@@ -1123,7 +1126,10 @@ class HKeyIME : InputMethodService() {
             val p = prev; val p2 = prev2; val ty = typed
             worker.post {
                 // P5: từ điển chưa sẵn sàng -> f=null, chỉ học từ đã chốt
-                val f = if (!predictorReady) null
+                // 1.5.0: chữ ĐÃ COMMIT là từ user xác nhận (vừa hoàn tác ->
+                // học "khoogn") thì bỏ fix — cổng này phải so trên typedWord,
+                // không phải bản transform "khôgn" (đó là bug sửa oan lặp).
+                val f = if (!predictorReady || predictor.knowsWord(typedWord)) null
                 else (predictor.typoFix(ty, p, p2)
                     ?: predictor.correction(ty, p, p2))
                     ?.let { TextContext.matchCase(ty, it) }
@@ -1298,7 +1304,9 @@ class HKeyIME : InputMethodService() {
             ic.endBatchEdit()
         }
         contextCache = null
-        contextPairBeforeCursor().let { learn(it.first, fix.typed, it.second) }
+        // 1.5.0: hoàn tác = xác nhận chủ động — học bắt buộc kể cả khi từ
+        // "trông như typo", không thì lần gõ sau bị sửa oan y hệt.
+        contextPairBeforeCursor().let { learn(it.first, fix.typed, it.second, force = true) }
         return true
     }
 
@@ -1321,7 +1329,7 @@ class HKeyIME : InputMethodService() {
             ic.endBatchEdit()
         }
         contextCache = null
-        contextPairBeforeCursor().let { learn(it.first, fix.typed, it.second) }
+        contextPairBeforeCursor().let { learn(it.first, fix.typed, it.second, force = true) }
         lastCommittedWord = fix.typed
         requestSuggestions()
     }
@@ -1425,20 +1433,28 @@ class HKeyIME : InputMethodService() {
      *  trên worker. Không đụng InputConnection/UI. */
     internal fun computeCandidates(req: SuggestRequest): CandidateSet {
         // 1.1: mảng trong url/email/ip -> không gợi ý, không sửa
+        // 1.5.0: lấy dư ứng viên (limit 4) để lọc trùng với ô giữa vẫn
+        // còn đủ 2 ô bên — trước đây hai bên lấy thẳng comp[0]/comp[1]
+        // nên đôi khi trùng với bản sửa ("duoc" -> cả 3 ô đều "được"-ish).
         val completions = if (req.tokenGlued) emptyList()
-            else predictor.completions(req.current, req.ctx, req.ctx2)
+            else predictor.completions(req.current, req.ctx, req.ctx2, limit = 4)
         // 3.4: chỉ đề nghị sửa khi từ đang gõ không phải tiền tố hợp lệ
         val fix = req.restore
             ?: if (req.tokenGlued || predictor.isPrefixOfKnownWord(req.current)) null
             else predictor.typoFix(req.current, req.ctx, req.ctx2)
                 ?: predictor.correction(req.current, req.ctx, req.ctx2)
+        val fixCased = fix?.let { TextContext.matchCase(req.current, it) }
+        val sides = completions.asSequence()
+            .map { TextContext.matchCase(req.current, it) }
+            .filter { it != fixCased && it != req.current }
+            .distinct()
+            .take(2)
+            .toList()
         // 1.2: hiện gợi ý đúng kiểu hoa để chạm vào ăn ngay
         return CandidateSet(
-            completions.getOrNull(0)
-                ?.let { TextContext.matchCase(req.current, it) } ?: "",
-            fix?.let { TextContext.matchCase(req.current, it) } ?: req.current,
-            completions.getOrNull(1)
-                ?.let { TextContext.matchCase(req.current, it) } ?: ""
+            sides.getOrNull(0) ?: "",
+            fixCased ?: req.current,
+            sides.getOrNull(1) ?: ""
         )
     }
 

@@ -39,12 +39,22 @@ Chạy sau mỗi giai đoạn, trước khi chuyển giai đoạn tiếp theo.
 - Gõ sai 1 từ → bấm ⌫ ngay sau để hoàn tác.
 - Chạm từ gốc trên thanh gợi ý để khôi phục nguyên văn.
 - Gõ từ đúng nhưng lạ (tên riêng, tiếng Anh) → không bị sửa oan.
+- **1.5.0 — từ Anh/mã không bị cắt chữ:** `plan `→`plan ` (không `lan`),
+  `code `→`code ` (không `coe`), `max `→`mã ` theo Telex nhưng không bao
+  giờ ra `ma`; trên VNI `max`, `plan` ra nguyên văn.
+- **1.5.0 — sau hoàn tác không sửa lặp:** gõ `khoogn `→`không`, ⌫ về
+  `khoogn`, space chốt lại → giữ `khoogn`; gõ `khoogn ` lần nữa vẫn giữ.
+- **1.5.0 — đổi ô không sửa lùi:** gõ `khoogn ` rồi chuyển ngay sang ô
+  khác/app khác trước khi bản sửa nền kịp chạy → ô cũ giữ `khoogn`,
+  ô mới không bị dán chữ lạ.
 - Đang gõ dở (từ còn là tiền tố từ khác) → ô giữa hiện từ đang gõ, không hiện "bản sửa".
 
 ## Gợi ý & học (từ Giai đoạn 3)
 - Gõ một từ lạ (tên riêng thường viết) 2 lần → lần 3 gõ khúc đầu phải thấy gợi ý.
 - Ngay sau dấu cách / đầu câu: 3 ô hiện từ đoán trước hợp lý.
 - Gợi ý hoàn thành phải ưu tiên từ hay đi sau từ trước (không còn xếp chữ cái).
+- **1.5.0 — 3 ô không trùng:** gõ `duoc` → ô giữa và 2 ô bên phải là 3
+  chữ khác nhau, không ô nào lặp.
 
 ## Vòng đời & dữ liệu học
 - Đổi ô nhập liên tục; chuyển app; khoá/mở màn hình.

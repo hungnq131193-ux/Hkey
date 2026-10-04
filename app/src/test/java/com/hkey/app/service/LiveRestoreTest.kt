@@ -463,4 +463,44 @@ class LiveRestoreTest {
         h.idle()
         assertEquals("ne", h.composing())
     }
+
+    /** 1.5.0: "max" qua Telex -> "mã" là phím lệ hợp lệ (âm tiết VN thật);
+     *  bug user báo là sửa oan thành "ma" — khẳng định không bao giờ ra "ma". */
+    @Test
+    fun plainMaxNeverShrinksThroughIme() {
+        val h = readyHarness()
+        h.type("max")
+        h.idle()
+        assertEquals("mã", h.composing())
+        h.type(" ")
+        h.idle()
+        assertTrue(h.text().endsWith("mã "))
+    }
+
+    /** 1.5.0: VNI gõ Việt end-to-end qua IME — phím dấu số vẫn biến đổi
+     *  đúng trong ô thường ("vie6t5" -> "việt"). */
+    @Test
+    fun vniVietnameseThroughIme() {
+        val h = ImeHarness(
+            prefsSetup = { putString(SettingsKeys.METHOD, "vni") }
+        )
+        h.type("vie6t5")
+        h.idle()
+        assertEquals("việt", h.composing())
+        h.type(" ")
+        h.idle()
+        assertTrue(h.text().endsWith("việt "))
+    }
+
+    /** 1.5.0: ô mật khẩu là raw field — không Telex, không sửa, không học. */
+    @Test
+    fun passwordFieldStaysRawThroughIme() {
+        val h = ImeHarness(
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        )
+        h.type("vieetj plan")
+        h.idle()
+        assertEquals("ok vieetj plan", h.text())
+    }
 }

@@ -18,6 +18,7 @@ import androidx.compose.ui.res.stringResource
 import com.hkey.app.R
 import com.hkey.app.settings.SettingsKeys
 import com.hkey.app.settings.SettingsViewModel
+import com.hkey.app.settings.ui.components.GroupCard
 import com.hkey.app.settings.ui.components.RadioRow
 import com.hkey.app.settings.ui.components.SwitchRow
 
@@ -35,16 +36,20 @@ fun MethodScreen(vm: SettingsViewModel) {
     )
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        items.forEach { (id, label, example) ->
-            RadioRow(label, example, st.method == id) {
-                if (id == "vni" && !st.numberRow) askVni = true
-                else vm.set(SettingsKeys.METHOD, id)
+        GroupCard {
+            items.forEach { (id, label, example) ->
+                RadioRow(label, example, st.method == id) {
+                    if (id == "vni" && !st.numberRow) askVni = true
+                    else vm.set(SettingsKeys.METHOD, id)
+                }
             }
         }
-        SwitchRow(
-            stringResource(R.string.st_tone_new), st.toneNew,
-            desc = if (st.toneNew) "hoà · thuỷ" else "hòa · thủy"
-        ) { vm.set(SettingsKeys.TONE_NEW, it) }
+        GroupCard {
+            SwitchRow(
+                stringResource(R.string.st_tone_new), st.toneNew,
+                desc = if (st.toneNew) "hoà · thuỷ" else "hòa · thủy"
+            ) { vm.set(SettingsKeys.TONE_NEW, it) }
+        }
     }
 
     // E5: VNI cần hàng số — hỏi, không tự ghi đè

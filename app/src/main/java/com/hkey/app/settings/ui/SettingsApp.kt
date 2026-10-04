@@ -1,13 +1,30 @@
 package com.hkey.app.settings.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -26,7 +43,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.hkey.app.R
 import com.hkey.app.settings.SettingsViewModel
+import com.hkey.app.settings.ui.components.GroupCard
+import com.hkey.app.settings.ui.components.KeyboardIcon
+import com.hkey.app.settings.ui.components.NavDivider
 import com.hkey.app.settings.ui.components.NavRow
+import com.hkey.app.settings.ui.components.SectionHeader
 import com.hkey.app.settings.ui.sections.AboutScreen
 import com.hkey.app.settings.ui.sections.DataScreen
 import com.hkey.app.settings.ui.sections.FeedbackScreen
@@ -35,9 +56,11 @@ import com.hkey.app.settings.ui.sections.InterfaceScreen
 import com.hkey.app.settings.ui.sections.MacroScreen
 import com.hkey.app.settings.ui.sections.MethodScreen
 import com.hkey.app.settings.ui.sections.SmartScreen
+import com.hkey.app.ui.KbThemes
 
 /** 1.4.0 (U2/U3): điều hướng bằng state (không Navigation-Compose) —
- *  rememberSaveable giữ màn khi xoay máy, BackHandler về Home. */
+ *  rememberSaveable giữ màn khi xoay máy, BackHandler về Home.
+ *  1.5.0: AnimatedContent fade+slide nhẹ 200ms khi đổi màn. */
 enum class Screen { HOME, METHOD, SMART, UI, FEEDBACK, HW, MACRO, DATA, ABOUT }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,7 +89,10 @@ fun SettingsApp(vm: SettingsViewModel) {
                 navigationIcon = {
                     if (cur != Screen.HOME) {
                         IconButton(onClick = { screen = Screen.HOME.name }) {
-                            Text("‹", style = MaterialTheme.typography.headlineMedium)
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.st_back)
+                            )
                         }
                     }
                 }
@@ -74,16 +100,29 @@ fun SettingsApp(vm: SettingsViewModel) {
         }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
-            when (cur) {
-                Screen.HOME -> HomeScreen(vm) { screen = it.name }
-                Screen.METHOD -> MethodScreen(vm)
-                Screen.SMART -> SmartScreen(vm)
-                Screen.UI -> InterfaceScreen(vm)
-                Screen.FEEDBACK -> FeedbackScreen(vm)
-                Screen.HW -> HwScreen(vm)
-                Screen.MACRO -> MacroScreen(vm)
-                Screen.DATA -> DataScreen(vm)
-                Screen.ABOUT -> AboutScreen()
+            AnimatedContent(
+                targetState = cur,
+                transitionSpec = {
+                    // Vào màn con: trượt từ phải; về Home: trượt ngược lại
+                    val fwd = targetState != Screen.HOME
+                    slideInHorizontally(tween(200)) { if (fwd) it / 8 else -it / 8 } +
+                        fadeIn(tween(200)) togetherWith
+                        slideOutHorizontally(tween(200)) { if (fwd) -it / 8 else it / 8 } +
+                        fadeOut(tween(160))
+                },
+                label = "screen"
+            ) { s ->
+                when (s) {
+                    Screen.HOME -> HomeScreen(vm) { screen = it.name }
+                    Screen.METHOD -> MethodScreen(vm)
+                    Screen.SMART -> SmartScreen(vm)
+                    Screen.UI -> InterfaceScreen(vm)
+                    Screen.FEEDBACK -> FeedbackScreen(vm)
+                    Screen.HW -> HwScreen(vm)
+                    Screen.MACRO -> MacroScreen(vm)
+                    Screen.DATA -> DataScreen(vm)
+                    Screen.ABOUT -> AboutScreen()
+                }
             }
         }
     }
@@ -94,6 +133,8 @@ private fun HomeScreen(vm: SettingsViewModel, go: (Screen) -> Unit) {
     val st by vm.state.collectAsState()
     val enabled by vm.imeEnabled.collectAsState()
     val selected by vm.imeSelected.collectAsState()
+    val themeName = KbThemes.ALL.find { it.id == st.kbTheme }?.name
+        ?: stringResource(R.string.st_theme_system)
 
     LazyColumn(Modifier.fillMaxSize()) {
         if (!enabled || !selected) {
@@ -130,17 +171,66 @@ private fun HomeScreen(vm: SettingsViewModel, go: (Screen) -> Unit) {
             OutlinedTextField(
                 value = t, onValueChange = { t = it },
                 placeholder = { Text(stringResource(R.string.st_try)) },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                modifier = Modifier.fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
-        item { NavRow(stringResource(R.string.st_sec_method), methodDesc(st.method, st.toneNew)) { go(Screen.METHOD) } }
-        item { NavRow(stringResource(R.string.st_sec_smart), smartDesc(st)) { go(Screen.SMART) } }
-        item { NavRow(stringResource(R.string.st_sec_ui), st.kbTheme ?: "system") { go(Screen.UI) } }
-        item { NavRow(stringResource(R.string.st_sec_feedback), feedbackDesc(st)) { go(Screen.FEEDBACK) } }
-        item { NavRow(stringResource(R.string.st_sec_hw), if (st.hwKeyboard) "Bật" else "Tắt") { go(Screen.HW) } }
-        item { NavRow(stringResource(R.string.st_sec_macro), "${com.hkey.app.settings.MacroCodec.parse(st.macros).size} gõ tắt") { go(Screen.MACRO) } }
-        item { NavRow(stringResource(R.string.st_sec_data), "") { go(Screen.DATA) } }
-        item { NavRow(stringResource(R.string.st_sec_about), com.hkey.app.BuildConfig.VERSION_NAME) { go(Screen.ABOUT) } }
+        item { SectionHeader(stringResource(R.string.st_grp_input)) }
+        item {
+            GroupCard {
+                NavRow(
+                    stringResource(R.string.st_sec_method),
+                    methodDesc(st.method, st.toneNew),
+                    Icons.Filled.Create
+                ) { go(Screen.METHOD) }
+                NavDivider()
+                NavRow(
+                    stringResource(R.string.st_sec_smart), smartDesc(st),
+                    Icons.Filled.Star
+                ) { go(Screen.SMART) }
+                NavDivider()
+                NavRow(
+                    stringResource(R.string.st_sec_macro),
+                    "${com.hkey.app.settings.MacroCodec.parse(st.macros).size} gõ tắt",
+                    Icons.AutoMirrored.Filled.List
+                ) { go(Screen.MACRO) }
+            }
+        }
+        item { SectionHeader(stringResource(R.string.st_grp_ui)) }
+        item {
+            GroupCard {
+                NavRow(
+                    stringResource(R.string.st_sec_ui), themeName,
+                    Icons.Filled.Settings
+                ) { go(Screen.UI) }
+                NavDivider()
+                NavRow(
+                    stringResource(R.string.st_sec_feedback), feedbackDesc(st),
+                    Icons.Filled.Notifications
+                ) { go(Screen.FEEDBACK) }
+                NavDivider()
+                NavRow(
+                    stringResource(R.string.st_sec_hw),
+                    if (st.hwKeyboard) "Bật" else "Tắt",
+                    KeyboardIcon
+                ) { go(Screen.HW) }
+            }
+        }
+        item { SectionHeader(stringResource(R.string.st_grp_data)) }
+        item {
+            GroupCard {
+                NavRow(
+                    stringResource(R.string.st_sec_data), "",
+                    Icons.Filled.Lock
+                ) { go(Screen.DATA) }
+                NavDivider()
+                NavRow(
+                    stringResource(R.string.st_sec_about),
+                    com.hkey.app.BuildConfig.VERSION_NAME,
+                    Icons.Filled.Info
+                ) { go(Screen.ABOUT) }
+            }
+        }
     }
 }
 

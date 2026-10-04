@@ -39,7 +39,9 @@ fun DataScreen(vm: SettingsViewModel) {
     var learned by remember { mutableIntStateOf(-1) }
     var askClear by remember { mutableStateOf(false) }
     var askReset by remember { mutableStateOf(false) }
-    var toast by remember { mutableStateOf<String?>(null) }
+    fun toast(msg: String) =
+        android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT)
+            .show()
 
     LaunchedEffect(Unit) {
         learned = withContext(Dispatchers.IO) { vm.learnedCount() }
@@ -49,11 +51,17 @@ fun DataScreen(vm: SettingsViewModel) {
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         uri?.let {
-            runCatching {
+            // 1.5.0: báo rõ thành công/thất bại — trước đây sao lưu im lặng
+            val ok = runCatching {
                 ctx.contentResolver.openOutputStream(it)?.use { os ->
                     os.write(vm.backupJson().toByteArray())
-                }
-            }
+                } ?: throw java.io.IOException("openOutputStream null")
+            }.isSuccess
+            toast(
+                ctx.getString(
+                    if (ok) R.string.st_backup_ok else R.string.st_backup_fail
+                )
+            )
         }
     }
     val openLauncher = rememberLauncherForActivityResult(
@@ -65,13 +73,16 @@ fun DataScreen(vm: SettingsViewModel) {
                     ins.readBytes().toString(Charsets.UTF_8)
                 }
             }.getOrNull()
-            toast = if (json == null) "?"
-            else try {
-                val n = vm.restoreJson(json)
-                ctx.getString(R.string.st_restore_ok, n)
-            } catch (e: Exception) {
-                ctx.getString(R.string.st_restore_bad)
-            }
+            // 1.5.0: đọc lỗi -> "file không hợp lệ" thay vì hiện "?"
+            toast(
+                if (json == null) ctx.getString(R.string.st_restore_bad)
+                else try {
+                    val n = vm.restoreJson(json)
+                    ctx.getString(R.string.st_restore_ok, n)
+                } catch (e: Exception) {
+                    ctx.getString(R.string.st_restore_bad)
+                }
+            )
         }
     }
 
@@ -96,12 +107,6 @@ fun DataScreen(vm: SettingsViewModel) {
             onClick = { askReset = true },
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
         ) { Text(stringResource(R.string.st_reset)) }
-        toast?.let {
-            Text(
-                it, style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(16.dp)
-            )
-        }
     }
 
     if (askClear) {

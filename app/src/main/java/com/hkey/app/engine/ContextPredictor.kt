@@ -790,6 +790,11 @@ class ContextPredictor {
         return tt == 0 || toneOf(cand) == tt
     }
 
+    /** 1.5.0: từ đã có trong từ điển/dữ liệu học — user đã xác nhận,
+     *  mọi đường tự sửa phải bỏ qua. Kiểm trên chữ ĐÃ COMMIT. */
+    fun knowsWord(word: String): Boolean =
+        vocabulary.containsKey(word.lowercase().trim())
+
     /** prefix đã gõ còn là tiền tố của từ hợp lệ khác? (3.4 — chỉ hiện bản
      *  sửa khi từ không thể là khúc đầu của từ đúng). 1.3.2: tiền tố phải
      *  tương thích dấu đã gõ. */
@@ -888,6 +893,10 @@ class ContextPredictor {
     ): String? {
         var word = typedWord.lowercase().trim()
         if (word.length < 3 || word.any { !it.isLetter() }) return null
+        // 1.5.0: từ đã có trong từ điển/từ đã học (kể cả loanword "code"
+        // hay từ user vừa xác nhận) là từ ĐÚNG — không bao giờ sửa. Trước
+        // đây check này nằm sau repair nên "code" vẫn bị xoá thành "coe".
+        if (vocabulary.containsKey(word)) return null
         // Từ không có dạng âm tiết VN (tiếng Anh, mã, URL…) không bao giờ sửa;
         // trừ typo gõ thừa phím lặp ("nayy" gom về "nay" vẫn là âm tiết VN).
         // 1.3.4: isValid siết dấu phụ -> cổng so trên dạng bỏ dấu phụ để typo
@@ -895,10 +904,15 @@ class ContextPredictor {
         // nên bị chặn y như cũ.
         // 1.4.1: phím thừa quanh dấu ("tiénge" thừa 'e' cuối) — thử xoá đúng
         // 1 ký tự để về dạng âm tiết rồi sửa như thường; không được thì bỏ.
+        // 1.5.0: repair CHỈ khi từ có glyph Việt (dấu thanh/mũ/móc đã in ra
+        // = bằng chứng "phím thừa quanh dấu" của người gõ TV). Từ thuần
+        // ASCII tuyệt đối không xoá chữ — "plan"→"lan", "code"→"coe",
+        // "max"→"ma" là bug.
         if (!ViSyllable.isValid(deaccent(word)) &&
             !ViSyllable.isValid(deaccent(dedupLetters(word)))
         ) {
-            word = repairDeletion(word) ?: return null
+            word = (if (word.any { it.code > 127 }) repairDeletion(word) else null)
+                ?: return null
             // Kết quả xoá đã là từ đúng ("tiếnge"->"tiếng") -> đó chính là
             // bản sửa, trả luôn — không qua cổng "đã đúng sẵn" bên dưới.
             if (vocabulary.containsKey(word)) return word

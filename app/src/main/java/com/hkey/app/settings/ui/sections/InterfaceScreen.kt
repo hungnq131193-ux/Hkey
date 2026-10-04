@@ -1,21 +1,21 @@
 package com.hkey.app.settings.ui.sections
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -45,7 +45,9 @@ import com.hkey.app.settings.ui.components.SwitchRow
 import com.hkey.app.ui.KbThemes
 import com.hkey.app.ui.ThemePreviewView
 
-/** Giao diện: preview trực tiếp + lưới 12 theme + kiểu phím + sliders. */
+/** Giao diện: preview trực tiếp + lưới theme (FlowRow — không lồng cuộn)
+ *  + kiểu phím + sliders. 1.5.0: viền chọn theme đổi màu mềm 200ms. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun InterfaceScreen(vm: SettingsViewModel) {
     val st by vm.state.collectAsState()
@@ -63,18 +65,20 @@ fun InterfaceScreen(vm: SettingsViewModel) {
         )
 
         SectionHeader(stringResource(R.string.st_theme))
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
-            modifier = Modifier.fillMaxWidth().height(300.dp).padding(horizontal = 12.dp),
-            contentPadding = PaddingValues(4.dp),
+        // 1.5.0: FlowRow thay LazyVerticalGrid cao cố định — lưới nằm trong
+        // cuộn ngoài không được là Lazy nữa (trước đây grid 300dp nuốt chạm).
+        FlowRow(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            maxItemsInEachRow = 3
         ) {
-            items(KbThemes.ALL) { t ->
+            KbThemes.ALL.forEach { t ->
                 val sel = t.id == themeId
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.clickable { vm.set(SettingsKeys.KB_THEME, t.id) }
+                    modifier = Modifier.weight(1f)
+                        .clickable { vm.set(SettingsKeys.KB_THEME, t.id) }
                 ) {
                     ThemeThumb(
                         t.id, night, sel,
@@ -120,18 +124,23 @@ fun InterfaceScreen(vm: SettingsViewModel) {
     }
 }
 
-/** Thumbnail theme: nền + 2 hàng "phím" vẽ Canvas theo palette thật. */
+/** Thumbnail theme: nền + 2 hàng "phím" vẽ Canvas theo palette thật.
+ *  Viền đổi màu/độ dày mềm khi được chọn. */
 @Composable
 private fun ThemeThumb(
     themeId: String, night: Boolean, selected: Boolean, modifier: Modifier
 ) {
     val p = KbThemes.palette(themeId, night)
-    val border = if (selected) MaterialTheme.colorScheme.primary
-    else MaterialTheme.colorScheme.outlineVariant
+    val border by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.outlineVariant,
+        tween(200), label = "themeBorder"
+    )
+    val borderW by animateDpAsState(
+        if (selected) 2.dp else 1.dp, tween(200), label = "themeBorderW"
+    )
     Canvas(
-        modifier.border(
-            if (selected) 2.dp else 1.dp, border, RoundedCornerShape(8.dp)
-        )
+        modifier.border(borderW, border, RoundedCornerShape(8.dp))
     ) {
         val r = CornerRadius(8.dp.toPx(), 8.dp.toPx())
         drawRoundRect(Color(p.bgTop), size = size, cornerRadius = r)

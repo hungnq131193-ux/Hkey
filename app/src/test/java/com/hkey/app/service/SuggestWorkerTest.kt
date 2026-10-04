@@ -84,6 +84,23 @@ class SuggestWorkerTest {
         assertTrue(cand(h.ime, "candidate2").isNotEmpty())
     }
 
+    /** 1.5.0: 3 ô không được trùng nhau — completion đầu ("được") không
+     *  hiện lại khi ô giữa đã là bản sửa đó. restore="được" mô phỏng đường
+     *  live-restore/sửa đã tính sẵn; completions("duoc") đầu cũng là "được". */
+    @Test
+    fun candidatesDoNotDuplicateFix() {
+        val qp = QueuePoster()
+        HKeyIME.workerPosterOverride = qp.post
+        val h = ImeHarness()
+        qp.pump()
+        val c = h.ime.computeCandidates(
+            HKeyIME.SuggestRequest(1, "duoc", "được", "ok", "", false)
+        )
+        assertEquals("được", c.c2)
+        assertTrue(c.c1.isNotEmpty() && c.c1 != c.c2)
+        assertTrue(c.c3 != c.c2 && c.c3 != c.c1)
+    }
+
     @Test
     fun computeCandidatesDeterministic() {
         val qp = QueuePoster()

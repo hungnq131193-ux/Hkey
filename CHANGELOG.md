@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.0 (versionCode 26)
+
+- Tự sửa không còn cắt chữ tiếng Anh/mã: "plan"→"lan", "code"→"coe",
+  "max"→"ma" được sửa. Từ thuần ASCII không có ký tự tiếng Việt thì
+  không bao giờ qua nhánh repair-xoá; từ đã có trong từ điển/từ đã học
+  được trả về ngay trước mọi phép biến đổi.
+- Hoàn tác tự sửa (⌫ hoặc chạm lại từ gốc) giờ HỌC từ user vừa xác
+  nhận — lần gõ sau cùng phím thô không bị sửa oan lặp lại.
+- Bản sửa nền bị huỷ khi đổi ô nhập/app: không còn sửa lùi chữ của ô
+  trước vào ô mới.
+- Gợi ý không còn trùng nhau giữa 3 ô (ô giữa đã là bản sửa thì hai ô
+  bên lấy ứng viên kế tiếp khác).
+- Cài đặt làm mới: nhóm cài đặt thành card bo góc có icon, chuyển màn
+  trượt+mờ nhẹ, viền chọn theme đổi màu mềm, nút Back dùng icon chuẩn,
+  lưới theme không còn cuộn lồng nuốt chạm.
+- Sao lưu/khôi phục báo rõ thành công/thất bại (trước đây sao lưu im
+  lặng, khôi phục lỗi hiện "?").
+
 ## 1.4.5 (versionCode 25)
 
 - Phím thanh kẹt giữa hai nguyên âm giờ cũng là dấu, không còn in ra

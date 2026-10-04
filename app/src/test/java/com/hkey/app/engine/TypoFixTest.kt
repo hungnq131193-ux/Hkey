@@ -48,6 +48,21 @@ class TypoFixTest {
         assertNull(p.correction("ẽpect", null))
     }
 
+    /** 1.5.0: repair-xoá chỉ chạy khi từ có glyph Việt (dấu đã in ra —
+     *  bằng chứng "phím thừa quanh dấu"). Từ thuần ASCII tuyệt đối không
+     *  bị xoá chữ: "plan"→"lan", "code"→"coe", "max"→"ma" là bug 1.4.x. */
+    @Test
+    fun asciiWordsNeverRepairedByDeletion() {
+        val p = ContextPredictor()
+        p.addWords(listOf("lan", "ma", "con", "coe", "code"))
+        assertNull(p.correction("plan", null))  // repair sẽ cho "lan" — cấm
+        assertNull(p.correction("max", null))   // repair sẽ cho "ma" — cấm
+        assertNull(p.correction("code", null))  // "code" trong từ điển -> null sớm
+        // Glyph Việt vẫn repair được như cũ
+        p.addWords(listOf("tiếng"))
+        assertEquals("tiếng", p.correction("tiénge", null))
+    }
+
     @Test
     fun marksCompatibility() {
         val p = ContextPredictor()

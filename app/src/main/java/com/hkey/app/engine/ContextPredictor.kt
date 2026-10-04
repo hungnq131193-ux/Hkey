@@ -864,16 +864,20 @@ class ContextPredictor {
         previousWord: String?,
         beforePrev: String? = null
     ): String? {
-        val word = typedWord.lowercase().trim()
+        var word = typedWord.lowercase().trim()
         if (word.length < 3 || word.any { !it.isLetter() }) return null
         // Từ không có dạng âm tiết VN (tiếng Anh, mã, URL…) không bao giờ sửa;
         // trừ typo gõ thừa phím lặp ("nayy" gom về "nay" vẫn là âm tiết VN).
         // 1.3.4: isValid siết dấu phụ -> cổng so trên dạng bỏ dấu phụ để typo
         // đặt lệch mũ/móc ("ngưòi") vẫn qua cổng; tiếng Anh không có dấu phụ
         // nên bị chặn y như cũ.
+        // 1.4.1: phím thừa quanh dấu ("tiénge" thừa 'e' cuối) — thử xoá đúng
+        // 1 ký tự để về dạng âm tiết rồi sửa như thường; không được thì bỏ.
         if (!ViSyllable.isValid(deaccent(word)) &&
             !ViSyllable.isValid(deaccent(dedupLetters(word)))
-        ) return null
+        ) {
+            word = repairDeletion(word) ?: return null
+        }
         if (vocabulary.containsKey(word)) return null
         val p1 = previousWord?.lowercase()?.trim() ?: ""
         val p2 = beforePrev?.lowercase()?.trim() ?: ""
@@ -927,6 +931,16 @@ class ContextPredictor {
         // không sửa (3.5).
         if ((winner.adj || winner.sameBase) && runnerUp != null &&
             winner.model >= runnerUp.model * weights.minMargin) return winner.word
+        return null
+    }
+
+    /** 1.4.1: thử xoá đúng 1 ký tự để đưa word về âm tiết VN hợp lệ (so
+     *  trên dạng bỏ dấu) — phím thừa quanh dấu kiểu "tiénge" -> "tiéng". */
+    private fun repairDeletion(w: String): String? {
+        for (i in w.indices) {
+            val v = w.substring(0, i) + w.substring(i + 1)
+            if (ViSyllable.isValid(deaccent(v))) return v
+        }
         return null
     }
 

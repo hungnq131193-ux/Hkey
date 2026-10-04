@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.2 (versionCode 22)
+
+- Tự sửa mạnh hơn: phím thừa quanh dấu — "tiesnge" (đặt sắc sớm + thừa
+  'e') giờ được sửa nền thành "tiếng" ngay sau space, không chỉ hiện
+  transform. Tiếng Anh không repair được vẫn bỏ qua.
+
 ## 1.4.1 (versionCode 21)
 
 - Sửa lỗi 1.4.0: gõ kiểu đặt dấu sớm giữa âm tiết ("tiesnge") hiển thị

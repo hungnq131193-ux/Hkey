@@ -51,4 +51,16 @@ class NonBlockingFixTest {
         qp.pump(); h.idle()
         assertEquals("ok khoogn a", h.text())
     }
+
+    /** 1.4.1: phím thừa quanh dấu — "tiesnge" đặt sắc sớm + thừa 'e' cuối
+     *  -> commit phím thô trước, sửa nền về "tiếng". */
+    @Test
+    fun extraCharAroundToneFixedAsync() {
+        val qp = QueuePoster()
+        val h = harness(qp)
+        h.type("tiesnge ")
+        assertEquals("ok tiesnge ", h.text())
+        qp.pump(); h.idle()
+        assertEquals("ok tiếng ", h.text())
+    }
 }

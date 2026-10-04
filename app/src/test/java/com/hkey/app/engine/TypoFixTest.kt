@@ -36,6 +36,18 @@ class TypoFixTest {
         assertNull(p.typoFix("xyzqq", null))   // không có phương án
     }
 
+    /** 1.4.1: correction thử xoá 1 phím thừa quanh dấu — "tiénge" (đặt sắc
+     *  sớm + thừa 'e') về "tiéng" rồi sửa thành "tiếng". Tiếng Anh không
+     *  repair được vẫn trả null. */
+    @Test
+    fun extraCharAroundToneRepaired() {
+        val p = ContextPredictor()
+        p.addWords(listOf("tiếng"))
+        assertEquals("tiếng", p.correction("tiénge", null))
+        assertNull(p.correction("expect", null))
+        assertNull(p.correction("ẽpect", null))
+    }
+
     @Test
     fun marksCompatibility() {
         val p = ContextPredictor()

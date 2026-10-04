@@ -71,6 +71,8 @@ class HKeyIME : InputMethodService() {
     private var optSound = true
     private var optLiveRestore = true
     private var optVibrate = true
+    private var optVibrateMs = 20 // P4: VIBRATE_STRENGTH
+    private var optSoundVol = 50  // P4: SOUND_VOLUME
     private var contextCache: Pair<String, String>? = null // (từ trước, từ trước nữa)
     private val tailTracker = TailTracker(40) // bản sao cục bộ text đã commit — cắt IPC (6b)
     private var currentInputType = 0 // inputType của ô đang focus (cờ CAP_* cho capsWanted)
@@ -203,9 +205,13 @@ class HKeyIME : InputMethodService() {
         optLiveRestore = prefs.getBoolean(SettingsKeys.LIVE_RESTORE, true)
         optVibrate = prefs.getBoolean(SettingsKeys.VIBRATE, true)
         optDoubleSpace = prefs.getBoolean(SettingsKeys.DOUBLE_SPACE, true)
+        optVibrateMs = prefs.getInt(SettingsKeys.VIBRATE_STRENGTH, 20)
+        optSoundVol = prefs.getInt(SettingsKeys.SOUND_VOLUME, 50)
         kbView?.let {
             it.soundEnabled = optSound
             it.vibrateEnabled = optVibrate
+            it.hapticMs = optVibrateMs
+            it.soundVolume = optSoundVol
         }
         if (key in uiPrefKeys && (isInputViewShown || inputView != null)) {
             repeatHandler.post { if (!destroyed) setInputView(onCreateInputView()) }
@@ -336,6 +342,8 @@ class HKeyIME : InputMethodService() {
         optLiveRestore = prefs.getBoolean(SettingsKeys.LIVE_RESTORE, true)
         optVibrate = prefs.getBoolean(SettingsKeys.VIBRATE, true)
         optDoubleSpace = prefs.getBoolean(SettingsKeys.DOUBLE_SPACE, true)
+        optVibrateMs = prefs.getInt(SettingsKeys.VIBRATE_STRENGTH, 20)
+        optSoundVol = prefs.getInt(SettingsKeys.SOUND_VOLUME, 50)
         // Chỉ inflate lại khi đổi settings hoặc chưa có view — S2.
         val kh = prefs.getInt(SettingsKeys.KB_HEIGHT, 100)
         val ks = prefs.getInt(SettingsKeys.KB_SIDE, 0)
@@ -359,6 +367,8 @@ class HKeyIME : InputMethodService() {
         kbView?.let {
             it.soundEnabled = optSound
             it.vibrateEnabled = optVibrate
+            it.hapticMs = optVibrateMs
+            it.soundVolume = optSoundVol
             it.langVi = vietMode
             it.enterAction = enterActionOf(info.inputType, info.imeOptions)
         }
@@ -601,6 +611,8 @@ class HKeyIME : InputMethodService() {
             configure(kh, ks, currentPalette(), appliedNumRow, currentCornerDp())
             soundEnabled = optSound
             vibrateEnabled = optVibrate
+            hapticMs = optVibrateMs
+            soundVolume = optSoundVol
             langVi = vietMode
             shifted = shiftOn
             capsLocked = shiftLocked
@@ -1012,7 +1024,9 @@ class HKeyIME : InputMethodService() {
             val gen = fixGen
             val p = prev; val p2 = prev2; val ty = typed
             worker.post {
-                val f = (predictor.correction(ty, p, p2)
+                // P5: từ điển chưa sẵn sàng -> f=null, chỉ học từ đã chốt
+                val f = if (!predictorReady) null
+                else (predictor.correction(ty, p, p2)
                     ?: predictor.typoFix(ty, p, p2))
                     ?.let { TextContext.matchCase(ty, it) }
                 repeatHandler.post {
@@ -1339,6 +1353,7 @@ class HKeyIME : InputMethodService() {
     /** P1/P2: correction+typoFix chạy trên worker; main chờ tối đa 30 ms
      *  (đường đồng bộ cho Enter/dấu câu — quá hạn thì không sửa). */
     internal fun computeCorrection(typed: String, prev: String, prev2: String): String? {
+        if (!predictorReady) return null // P5: chưa có chỉ mục -> không sửa
         val task = java.util.concurrent.FutureTask<String?> {
             // 1.3.2: correction bỏ qua chuỗi không-phải-âm-tiết -> typoFix
             // bắt lỗi đảo ký tự / sót ký tự giữa từ ("khôgn" -> "không")
@@ -1357,6 +1372,13 @@ class HKeyIME : InputMethodService() {
         if (rawMode || noSuggest || !vietMode) {
             suggestGen++ // hủy mọi request đang bay
             applyCandidates(CandidateSet("", "", ""))
+            return
+        }
+        // P5: từ điển chưa sẵn sàng -> ô giữa = chữ đang gõ, hai bên trống;
+        // không gọi predictor trước khi installIndex xong.
+        if (!predictorReady) {
+            suggestGen++
+            applyCandidates(CandidateSet("", currentDisplay, ""))
             return
         }
         val (ctx, ctx2) = contextPairBeforeCursor()

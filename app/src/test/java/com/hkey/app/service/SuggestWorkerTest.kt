@@ -21,6 +21,7 @@ class SuggestWorkerTest {
             var k = n
             while (k-- > 0 && q.isNotEmpty()) q.removeFirst().run()
         }
+        fun pending() = q.size
     }
 
     @After fun resetWorker() {
@@ -57,6 +58,30 @@ class SuggestWorkerTest {
         qp.pump()        // gen2 tính -> apply
         h.idle()
         assertEquals("vi", cand(h.ime, "candidate2"))
+    }
+
+    /** 1.4.0 (P5/C7): trước khi dict sẵn sàng — không post request tới
+     *  predictor, ô giữa hiện chữ đang gõ, hai bên trống, không crash. */
+    @Test
+    fun noSuggestBeforeDictReady() {
+        val qp = QueuePoster()
+        HKeyIME.workerPosterOverride = qp.post
+        val h = ImeHarness()
+        // KHÔNG pump: task nạp dict còn trong hàng -> predictorReady=false
+        h.type("viet")
+        updateSug(h.ime)
+        assertEquals("viet", cand(h.ime, "candidate2"))
+        assertEquals("", cand(h.ime, "candidate1"))
+        assertEquals("", cand(h.ime, "candidate3"))
+        assertEquals(1, qp.pending()) // chỉ còn task nạp dict, không có request gợi ý
+
+        qp.pump() // nạp xong -> ready
+        h.idle()
+        h.type("t")
+        updateSug(h.ime)
+        qp.pump()
+        h.idle()
+        assertTrue(cand(h.ime, "candidate2").isNotEmpty())
     }
 
     @Test

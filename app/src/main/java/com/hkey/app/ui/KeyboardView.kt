@@ -11,6 +11,8 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.VelocityTracker
@@ -229,6 +231,10 @@ class KeyboardView(context: Context) : View(context) {
     var numberRow = false
     var soundEnabled = true
     var vibrateEnabled = true
+    /** 1.4.0 (C5): cường độ rung (ms) + âm lượng bấm (0..100) — HKeyIME
+     *  đẩy xuống từ VIBRATE_STRENGTH/SOUND_VOLUME. */
+    var hapticMs = 20
+    var soundVolume = 50
 
     var shifted = false
         set(v) { if (field != v) { field = v; invalidate() } }
@@ -318,6 +324,7 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
 
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val txtPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -884,14 +891,26 @@ class KeyboardView(context: Context) : View(context) {
             }
             // 1.2: phát qua AudioManager theo cờ của HKey — không phụ thuộc
             // "âm thanh chạm" hệ thống (bật trong app mà không kêu).
-            audio?.playSoundEffect(fx, -1f)
+            // 1.4.0 (C5): âm lượng theo SOUND_VOLUME (0..100).
+            audio?.playSoundEffect(fx, soundVolume / 100f)
         }
-        if (vibrateEnabled) {
-            @Suppress("DEPRECATION")
-            performHapticFeedback(
-                HapticFeedbackConstants.KEYBOARD_TAP,
-                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
-            )
+        // 1.4.0 (C5): rung theo VIBRATE_STRENGTH ms qua VibrationEffect
+        // thay KEYBOARD_TAP hệ thống (không điều chỉnh được cường độ).
+        if (vibrateEnabled && hapticMs > 0) {
+            val vib = vibrator
+            if (vib != null) {
+                vib.vibrate(
+                    VibrationEffect.createOneShot(
+                        hapticMs.toLong(), VibrationEffect.DEFAULT_AMPLITUDE
+                    )
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                performHapticFeedback(
+                    HapticFeedbackConstants.KEYBOARD_TAP,
+                    HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                )
+            }
         }
     }
 

@@ -90,12 +90,15 @@ internal object ViTone {
 
         val len = e - s + 1
         if (len == 1) return s
+        // Cụm "uya": 'u' là âm môi, 'y' là bán âm — dấu ở 'a' cuối
+        // ("khuya" -> "khuyà"). "uyu"/"uye" vẫn theo luật giữa ("khuỷu").
+        if (len >= 3 && text[s + 1] == 'y' && text[s + 2] == 'a') return s + 2
         if (len >= 3) return s + 1 // cụm 3 âm: dấu ở giữa (xoài)
 
         // Cụm 2 nguyên âm: có phụ âm cuối -> âm 2 ("hoàn"); mở oa/oe/uy ->
         // âm 2 kiểu mới ("hoà", "khoẻ", "thuỷ"), âm 1 kiểu cũ ("hòa","khòe")
         val hasFinalConsonant = e + 1 < text.length
-        return if (hasFinalConsonant ||
+        return if (hasFinalConsonant || text[s] == 'y' ||
             (newStyle && text.substring(s, e + 1) in secondVowelOpenClusters)
         ) e else s
     }

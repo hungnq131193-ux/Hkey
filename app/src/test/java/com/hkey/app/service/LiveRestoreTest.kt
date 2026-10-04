@@ -338,8 +338,8 @@ class LiveRestoreTest {
     @Test
     fun vietnameseEarlyToneShowsTransform() {
         val showTransform = listOf(
-            "tiesnge" to "tiénge", // 's' sắc giữa từ, đuôi "nge" hợp lệ
-            "duosngf" to "duòng"   // 's'+'f' nuốt giữa, "duò"+"ng" hợp lệ
+            "tiesnge" to "tiếng", // 'e' cuối bẻ 'e' kề 'i' -> ê, 's' giữa từ
+            "duosngf" to "duòng"  // 's'+'f' nuốt giữa, "duò"+"ng" hợp lệ
         )
         for ((raw, t) in showTransform) {
             assertEquals(t, telex.transform(raw))
@@ -390,10 +390,11 @@ class LiveRestoreTest {
         h.idle()
         assertEquals("đước", h.composing())
         // 1.4.1: đặt dấu sớm giữa từ vẫn hiện transform (không restore raw)
+        // 1.4.2: 'e' cuối sau phụ âm đúp nguyên âm kề -> "tiếng" hợp lệ
         h.type(" ")
         h.type("tiesnge")
         h.idle()
-        assertEquals("tiénge", h.composing())
+        assertEquals("tiếng", h.composing())
     }
 
     @Test

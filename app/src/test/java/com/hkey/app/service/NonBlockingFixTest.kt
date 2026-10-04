@@ -52,14 +52,25 @@ class NonBlockingFixTest {
         assertEquals("ok khoogn a", h.text())
     }
 
-    /** 1.4.1: phím thừa quanh dấu — "tiesnge" đặt sắc sớm + thừa 'e' cuối
-     *  -> commit phím thô trước, sửa nền về "tiếng". */
+    /** 1.4.2: "tiesnge" giờ transform thẳng thành "tiếng" hợp lệ ('e' cuối
+     *  đúp 'e' kề 'i' -> ê) -> chốt luôn, không cần sửa nền. */
+    @Test
+    fun retroDoubleCommitsDirectly() {
+        val qp = QueuePoster()
+        val h = harness(qp)
+        h.type("tiesnge ")
+        assertEquals("ok tiếng ", h.text())
+    }
+
+    /** 1.4.1: phím thừa quanh dấu — "tieesnge" (đúp ê + sắc sớm + thừa 'e'
+     *  cuối) -> "tiếnge" không hợp lệ -> commit phím thô, sửa nền về
+     *  "tiếng". */
     @Test
     fun extraCharAroundToneFixedAsync() {
         val qp = QueuePoster()
         val h = harness(qp)
-        h.type("tiesnge ")
-        assertEquals("ok tiesnge ", h.text())
+        h.type("tieesnge ")
+        assertEquals("ok tieesnge ", h.text())
         qp.pump(); h.idle()
         assertEquals("ok tiếng ", h.text())
     }

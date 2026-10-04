@@ -85,6 +85,27 @@ class TelexEngine(
         return null
     }
 
+    /** Phím `mark` ('a'/'e'/'o') gõ sau cùng (đã cắt khỏi word): quét ngược
+     *  tìm nguyên âm cùng loại đứng kề một nguyên âm khác rồi đúp lên
+     *  â/ê/ô, giữ tone và kiểu hoa — như applyW nhưng chặt hơn: nguyên âm
+     *  đơn lẻ giữa phụ âm không đụng ("data", "delete"). */
+    private fun applyRetroDouble(word: String, mark: Char): String? {
+        val target = when (mark) {
+            'a' -> 'â'; 'e' -> 'ê'; 'o' -> 'ô'; else -> return null
+        }
+        for (i in word.length - 1 downTo 0) {
+            if (decomposed(word[i]).first != mark) continue
+            val nearVowel = (i > 0 && ViTone.isVowelChar(word[i - 1])) ||
+                (i + 1 < word.length && ViTone.isVowelChar(word[i + 1]))
+            if (!nearVowel) continue
+            val v = vowelBase.getValue(target)[decomposed(word[i]).second]
+            return word.substring(0, i) +
+                (if (word[i].isUpperCase()) v.uppercase() else v) +
+                word.substring(i + 1)
+        }
+        return null
+    }
+
     /** "uow" -> "ươ" phải chạy trước rule "ow"/"uw"; 'u' sau 'q' là phụ âm.
      *  Mask: ư lấy hoa của 'u', ơ lấy hoa của 'o'/'w' (1.2).
      *  1.4.0 (A4): "uow" không còn gì đi sau -> chỉ bẻ "ow"->ơ giữ 'u'
@@ -329,6 +350,18 @@ class TelexEngine(
         // 'w' cuối sau phụ âm -> bẻ dấu nguyên âm trước nó ("honw" -> "hơn")
         if (text.endsWith("w")) {
             applyW(text.dropLast(1))?.let {
+                text = it
+                up = up.copyOf(text.length)
+            }
+        }
+        // 'a'/'e'/'o' cuối sau phụ âm -> đúp nguyên âm cùng loại đứng kề một
+        // nguyên âm khác ("tienge" -> "tiêng", "khuyana" -> "khuyân") —
+        // nguyên âm đơn lẻ giữa phụ âm là chữ thật ("data", "delete" giữ
+        // nguyên). Simple Telex không có aa/ee/oo -> không bẻ.
+        if (opts.method != ImeMethod.TELEX_SIMPLE && text.length > 1 &&
+            text.last() in "aeo" && !ViTone.isVowelChar(text[text.length - 2])
+        ) {
+            applyRetroDouble(text.dropLast(1), text.last())?.let {
                 text = it
                 up = up.copyOf(text.length)
             }

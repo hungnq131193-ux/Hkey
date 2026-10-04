@@ -877,6 +877,9 @@ class ContextPredictor {
             !ViSyllable.isValid(deaccent(dedupLetters(word)))
         ) {
             word = repairDeletion(word) ?: return null
+            // Kết quả xoá đã là từ đúng ("tiếnge"->"tiếng") -> đó chính là
+            // bản sửa, trả luôn — không qua cổng "đã đúng sẵn" bên dưới.
+            if (vocabulary.containsKey(word)) return word
         }
         if (vocabulary.containsKey(word)) return null
         val p1 = previousWord?.lowercase()?.trim() ?: ""

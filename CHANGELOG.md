@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.3 (versionCode 23)
+
+- 'a'/'e'/'o' cuối từ sau phụ âm bẻ dấu phụ ngược lên nguyên âm cùng
+  loại đứng kề nguyên âm khác — như 'w' cuối vẫn làm: gõ "tiéng" rồi
+  bấm 'e' ra "tiếng", "tuana"→"tuân", "duono"→"duôn". Nguyên âm đơn lẻ
+  giữa phụ âm không bẻ nên tiếng Anh ("data", "delete", "banana")
+  không bị ảnh hưởng. Cùng lúc sửa luôn cảm giác "gõ nhầm back lại
+  không gõ được nguyên âm" — phím nguyên âm sau backspace giờ đúp đúng.
+- Sửa nền: lỗi đảo/chèn ký tự (typoFix) được thử trước repair-xoá —
+  "khoogn" vẫn về "không" chứ không bị cắt thành "khôn"; repair xoá ra
+  đúng từ điển thì trả luôn ("tiếnge"→"tiếng").
+
 ## 1.4.2 (versionCode 22)
 
 - Tự sửa mạnh hơn: phím thừa quanh dấu — "tiesnge" (đặt sắc sớm + thừa

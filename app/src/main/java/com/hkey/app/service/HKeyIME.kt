@@ -1117,8 +1117,8 @@ class HKeyIME : InputMethodService() {
             worker.post {
                 // P5: từ điển chưa sẵn sàng -> f=null, chỉ học từ đã chốt
                 val f = if (!predictorReady) null
-                else (predictor.correction(ty, p, p2)
-                    ?: predictor.typoFix(ty, p, p2))
+                else (predictor.typoFix(ty, p, p2)
+                    ?: predictor.correction(ty, p, p2))
                     ?.let { TextContext.matchCase(ty, it) }
                 repeatHandler.post {
                     applyPendingFix(gen, typedWord, raw, f, p, p2)
@@ -1423,8 +1423,8 @@ class HKeyIME : InputMethodService() {
         // 3.4: chỉ đề nghị sửa khi từ đang gõ không phải tiền tố hợp lệ
         val fix = req.restore
             ?: if (req.tokenGlued || predictor.isPrefixOfKnownWord(req.current)) null
-            else predictor.correction(req.current, req.ctx, req.ctx2)
-                ?: predictor.typoFix(req.current, req.ctx, req.ctx2)
+            else predictor.typoFix(req.current, req.ctx, req.ctx2)
+                ?: predictor.correction(req.current, req.ctx, req.ctx2)
         // 1.2: hiện gợi ý đúng kiểu hoa để chạm vào ăn ngay
         return CandidateSet(
             completions.getOrNull(0)
@@ -1446,10 +1446,11 @@ class HKeyIME : InputMethodService() {
     internal fun computeCorrection(typed: String, prev: String, prev2: String): String? {
         if (!predictorReady) return null // P5: chưa có chỉ mục -> không sửa
         val task = java.util.concurrent.FutureTask<String?> {
-            // 1.3.2: correction bỏ qua chuỗi không-phải-âm-tiết -> typoFix
-            // bắt lỗi đảo ký tự / sót ký tự giữa từ ("khôgn" -> "không")
-            predictor.correction(typed, prev, prev2)
-                ?: predictor.typoFix(typed, prev, prev2)
+            // 1.4.2: typoFix trước — lỗi đảo/chèn ký tự là bằng chứng mạnh
+            // hơn repair-xoá của correction ("khôgn" -> "không", không phải
+            // "khôn"); correction bắt lệch dấu/phím thừa còn lại.
+            predictor.typoFix(typed, prev, prev2)
+                ?: predictor.correction(typed, prev, prev2)
         }
         worker.post(task)
         return try {

@@ -235,6 +235,17 @@ class EngineUnitTest {
         assertEquals("hoan", telex.stripTones("hoán"))
         assertEquals("tiên", telex.stripTones("tiến"))
         assertEquals("đươc", telex.stripTones("được")) // tone gỡ, dấu phụ giữ
+        // 1.4.2: 'a'/'e'/'o' cuối sau phụ âm đúp nguyên âm cùng loại đứng
+        // kề nguyên âm khác (như 'w' cuối) — "tieng"+"e" -> "tiêng"
+        assertEquals("tiêng", telex.transform("tienge"))
+        assertEquals("tiếng", telex.transform("tiesnge"))
+        assertEquals("tiên", telex.transform("tiene"))
+        assertEquals("tuân", telex.transform("tuana"))
+        assertEquals("duôn", telex.transform("duono"))
+        // Nguyên âm đơn lẻ giữa phụ âm không bẻ -> tiếng Anh giữ nguyên
+        assertEquals("data", telex.transform("data"))
+        assertEquals("delete", telex.transform("delete"))
+        assertEquals("banana", telex.transform("banana"))
     }
 
     // 1.4.0 (A4): "uow" không gì đi sau -> "uơ" (thuow->thuơ, gõ tiếp thuowng->thương);

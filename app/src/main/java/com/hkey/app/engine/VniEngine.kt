@@ -40,6 +40,8 @@ class VniEngine(
 
     override fun transform(input: String): String {
         if (input.isEmpty()) return ""
+        // 1.5.1: phím thô là từ đã biết/đã học -> giữ nguyên (như Telex).
+        if (opts.commonWord?.invoke(input.lowercase()) == true) return input
         var text = input.lowercase()
         var up = BooleanArray(input.length) { input[it].isUpperCase() }
 

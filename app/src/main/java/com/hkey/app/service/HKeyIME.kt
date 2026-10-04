@@ -535,6 +535,14 @@ class HKeyIME : InputMethodService() {
         worker.post {
             if (noLearning || (!force && predictor.looksLikeTypo(word))) return@post
             predictor.recordSequence(prev, word, prev2 = prev2)
+            // 1.5.1: từ vừa học phải mở cổng phím lệ thường ngay — commonSet
+            // chỉ dựng lúc nạp dict; thiếu bước này thì "max" vừa chạm vẫn
+            // bị bẻ thành "mã" ở lần gõ sau (điều kiện recordSequence giống
+            // nhau: chỉ chữ cái, độ dài hợp lý).
+            val w = word.lowercase().trim()
+            if (w.isNotEmpty() && w.length <= 24 && w.all { it.isLetter() }) {
+                repeatHandler.post { commonSet = commonSet + w }
+            }
             markLearnedDirty()
         }
     }
@@ -624,6 +632,7 @@ class HKeyIME : InputMethodService() {
             tailTracker.invalidate()
             expectedSels.clear()
             shownComposingLen = 0
+            clearStaleCandidates() // 1.5.1: ngữ cảnh đổi -> xoá ứng viên cũ ngay
         }
         updateAutoShift()
     }
@@ -1346,6 +1355,7 @@ class HKeyIME : InputMethodService() {
             tailTracker.invalidate() // app tự xử lý action — text đổi ngoài tầm
             cursorUnknown()
             updateAutoShift()
+            clearStaleCandidates()
             return
         }
         if (currentInputType != InputType.TYPE_NULL && isMultiLine(currentInputType)) {
@@ -1363,6 +1373,16 @@ class HKeyIME : InputMethodService() {
         }
         contextCache = null
         updateAutoShift()
+        clearStaleCandidates()
+    }
+
+    /** 1.5.1: ENTER/xuống dòng xoá ứng viên dòng cũ ngay (đồng bộ, không chờ
+     *  frame sau) rồi mới request làm mới — trước đây thiếu bước này nên
+     *  thanh giữ nguyên từ cũ khi user bắt đầu gõ dòng mới. */
+    private fun clearStaleCandidates() {
+        suggestGen++ // vô hiệu mọi request gợi ý đang bay
+        applyCandidates(CandidateSet("", "", ""))
+        requestSuggestions()
     }
 
     /** Đang hiện phương án hoàn tác auto-fix thì chạm candidate = hoàn tác. */
@@ -1390,7 +1410,9 @@ class HKeyIME : InputMethodService() {
         // commitText tự thay thế vùng composing nếu đang gõ dở
         currentInputConnection?.let { icCommit(it, "$cased ") }
         tailTracker.append("$cased ")
-        learn(ctxPair.first, word, ctxPair.second)
+        // 1.5.1: chạm ứng viên = xác nhận chủ động (như hoàn tác auto-fix)
+        // — force để ô phím thô "max" trông-như-typo vẫn được học.
+        learn(ctxPair.first, word, ctxPair.second, force = true)
         lastCommittedWord = cased
         currentComposingWord.clear()
         consumeShift()
@@ -1424,7 +1446,8 @@ class HKeyIME : InputMethodService() {
         val restore: String?, // bản đề nghị đã tính sẵn (VN khi live restore / raw)
         val ctx: String,
         val ctx2: String,
-        val tokenGlued: Boolean
+        val tokenGlued: Boolean,
+        val raw: String = current // 1.5.1: buffer phím thô — ô cuối là lối thoát
     )
 
     internal data class CandidateSet(val c1: String, val c2: String, val c3: String)
@@ -1444,9 +1467,12 @@ class HKeyIME : InputMethodService() {
             else predictor.typoFix(req.current, req.ctx, req.ctx2)
                 ?: predictor.correction(req.current, req.ctx, req.ctx2)
         val fixCased = fix?.let { TextContext.matchCase(req.current, it) }
+        // 1.5.1: transform bẻ phím thô ("max"->"mã", "ddc"->"đc") -> ô cuối
+        // luôn là chữ đã gõ để user chọn giữ nguyên; chạm = chốt + học.
+        val rawSide = req.raw.takeIf { it != req.current && it != fixCased }
         val sides = completions.asSequence()
             .map { TextContext.matchCase(req.current, it) }
-            .filter { it != fixCased && it != req.current }
+            .filter { it != fixCased && it != req.current && it != rawSide }
             .distinct()
             .take(2)
             .toList()
@@ -1454,7 +1480,7 @@ class HKeyIME : InputMethodService() {
         return CandidateSet(
             sides.getOrNull(0) ?: "",
             fixCased ?: req.current,
-            sides.getOrNull(1) ?: ""
+            rawSide ?: sides.getOrNull(1) ?: ""
         )
     }
 
@@ -1515,7 +1541,7 @@ class HKeyIME : InputMethodService() {
                 else -> raw.takeIf { ViSyllable.restorable(it, current) }
             }
             val req = SuggestRequest(
-                ++suggestGen, current, restore, ctx, ctx2, tokenGlued
+                ++suggestGen, current, restore, ctx, ctx2, tokenGlued, raw
             )
             worker.post {
                 val c = computeCandidates(req)

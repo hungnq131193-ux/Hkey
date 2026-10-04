@@ -202,6 +202,14 @@ class TelexEngine(
 
     override fun transform(input: String): String {
         if (input.isEmpty()) return ""
+        // 1.5.1: phím thô là từ đã biết/đã học ("max" sau khi user chạm ô
+        // phím thô -> học) -> giữ nguyên, không bẻ thành "mã" nữa. Phải chạy
+        // TRƯỚC lastTransform — cache "max"->"mã" cũ sẽ nuốt cổng này; cũng
+        // phủ phím dấu thường ('x' cuối từ), không chỉ phím lệ thường.
+        if (opts.commonWord?.invoke(input.lowercase()) == true) {
+            lastTransform = input to input
+            return input
+        }
         lastTransform?.let { if (it.first == input) return it.second }
         val out = transformInternal(input, false)
         // 2.x spell-check: phím dấu là ký tự cuối và kết quả không phải âm

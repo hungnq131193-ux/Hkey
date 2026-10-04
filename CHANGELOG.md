@@ -17,6 +17,13 @@
   lưới theme không còn cuộn lồng nuốt chạm.
 - Sao lưu/khôi phục báo rõ thành công/thất bại (trước đây sao lưu im
   lặng, khôi phục lỗi hiện "?").
+- Xuống dòng/dời con trỏ xoá ngay ứng viên cũ trên thanh gợi ý — không
+  còn treo từ của dòng trước khi bắt đầu gõ dòng mới.
+- Khi Telex biến phím thô thành âm tiết Việt hợp lệ ("max"→"mã"), ô
+  cuối thanh gợi ý luôn là chữ đã gõ — chạm để chốt nguyên văn; từ được
+  chọn được học ngay nên lần sau "max" giữ nguyên, không bị bẻ nữa.
+- Viết tắt toàn phụ âm không còn bị hoàn nguyên phím thô: "ddc"→"đc",
+  "dd"→"đ", "Ddc"→"Đc" (giữ kiểu hoa đã gõ).
 
 ## 1.4.5 (versionCode 25)
 

@@ -41,12 +41,21 @@ Chạy sau mỗi giai đoạn, trước khi chuyển giai đoạn tiếp theo.
 - Gõ từ đúng nhưng lạ (tên riêng, tiếng Anh) → không bị sửa oan.
 - **1.5.0 — từ Anh/mã không bị cắt chữ:** `plan `→`plan ` (không `lan`),
   `code `→`code ` (không `coe`), `max `→`mã ` theo Telex nhưng không bao
-  giờ ra `ma`; trên VNI `max`, `plan` ra nguyên văn.
+  giờ ra `ma` và ô cuối gợi ý luôn là `max` để chọn; trên VNI `max`,
+  `plan` ra nguyên văn.
 - **1.5.0 — sau hoàn tác không sửa lặp:** gõ `khoogn `→`không`, ⌫ về
   `khoogn`, space chốt lại → giữ `khoogn`; gõ `khoogn ` lần nữa vẫn giữ.
 - **1.5.0 — đổi ô không sửa lùi:** gõ `khoogn ` rồi chuyển ngay sang ô
   khác/app khác trước khi bản sửa nền kịp chạy → ô cũ giữ `khoogn`,
   ô mới không bị dán chữ lạ.
+- **1.5.0 — dòng mới không treo từ cũ:** gõ một câu có gợi ý, ENTER
+  xuống dòng → thanh gợi ý trống/làm mới ngay, không còn chữ của dòng
+  trước; chạm dời con trỏ sang chỗ khác cũng vậy.
+- **1.5.0 — lối thoát phím thô:** gõ `max` → hiển thị `mã`, ô cuối
+  thanh gợi ý là `max`; chạm `max` → chốt `max `; gõ `max` lần sau
+  giữ nguyên luôn. Tương tự `taxi`/`visa` nếu bị bẻ.
+- **1.5.0 — viết tắt phụ âm:** `ddc `→`đc `, `dd `→`đ `, `Ddc `→`Đc `;
+  `window `→`window ` vẫn giữ nguyên văn.
 - Đang gõ dở (từ còn là tiền tố từ khác) → ô giữa hiện từ đang gõ, không hiện "bản sửa".
 
 ## Gợi ý & học (từ Giai đoạn 3)

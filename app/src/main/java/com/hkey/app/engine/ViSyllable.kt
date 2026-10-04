@@ -102,10 +102,13 @@ object ViSyllable {
     /** Transform chèn glyph VN vào kết quả không phải âm tiết hợp lệ -> chốt
      *  bằng phím thô ("text/expect/window" về nguyên gõ — 1.3). 1.3.1: chỉ
      *  restore khi xuất hiện ký tự VN — transform chỉ gộp phím lặp ra ASCII
-     *  sạch ("tesst"->"test") thì chốt đúng như hiển thị, không lộ phím thô. */
+     *  sạch ("tesst"->"test") thì chốt đúng như hiển thị, không lộ phím thô.
+     *  1.5.1: kết quả không nguyên âm = viết tắt có chủ đích ("ddc"->"đc",
+     *  "dd"->"đ") — giữ transform, không hoàn nguyên. ("www"->"ưưư" có
+     *  nguyên âm vẫn hoàn nguyên như cũ.) */
     fun restorable(raw: String, transformed: String): Boolean =
         transformed != raw && !isValid(transformed.lowercase()) &&
-            transformed.any { it.code > 127 }
+            transformed.any { it.code > 127 } && hasVowel(transformed)
 
     /** 1.4.0 (E2): như restorable nhưng non-strict — giữa lúc gõ, vần
      *  chỉ-đóng đứng trần ("việ") vẫn là trạng thái hợp lệ; chỉ live restore
@@ -117,9 +120,11 @@ object ViSyllable {
      *  "expect"->"ẻpet": dấu ở đầu từ -> vẫn restore; "west"->"ứet",
      *  "doorway"->"dôửay": đầu âm trước dấu không phải âm -> vẫn restore. */
     fun liveRestorable(raw: String, transformed: String): Boolean {
+        // 1.5.1: kết quả không nguyên âm -> viết tắt ("ddc"->"đc") hiển
+        // thị transform luôn, không treo phím thô như tiếng Anh.
         if (transformed.length < 2 || transformed == raw ||
             isValid(transformed.lowercase(), strict = false) ||
-            transformed.none { it.code > 127 }
+            transformed.none { it.code > 127 } || !hasVowel(transformed)
         ) return false
         for (i in 1 until transformed.length) {
             if (ViGlyphs.decomposed(transformed[i]).second != 0) {
@@ -134,4 +139,12 @@ object ViSyllable {
         }
         return true
     }
+
+    /** Kết quả transform chứa nguyên âm không — 1.5.1: chuỗi toàn phụ âm
+     *  ("đc", "đk") là viết tắt chủ đích -> giữ transform; có nguyên âm
+     *  ("ưưư", "tẽt") thì vẫn là tiếng Anh bị bẻ -> hoàn nguyên như cũ. */
+    private fun hasVowel(s: String): Boolean =
+        s.any { ViGlyphs.bareChar(it).lowercaseChar() in VOWELS }
+
+    private const val VOWELS = "aăâeêioôơuưy"
 }

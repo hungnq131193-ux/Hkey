@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.1 (versionCode 21)
+
+- Sửa lỗi 1.4.0: gõ kiểu đặt dấu sớm giữa âm tiết ("tiesnge") hiển thị
+  nguyên phím thô thay vì bản biến đổi ("tiénge"). Bộ lọc live restore
+  giờ nhận diện phím thanh bị nuốt giữa từ khi hai phía vẫn là âm tiết
+  hợp lệ → hiện transform cho người gõ tiếng Việt; từ tiếng Anh
+  ("expect", "west", "doorway", "master") vẫn hoàn nguyên đúng.
+
 ## 1.4.0 (versionCode 20)
 
 **Màn cài đặt viết lại bằng Jetpack Compose**

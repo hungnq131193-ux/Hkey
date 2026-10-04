@@ -332,6 +332,37 @@ class LiveRestoreTest {
         // có chủ đích — không cho tự động
     }
 
+    /** 1.4.1: phím thanh bị nuốt giữa từ + 2 phía vẫn là âm tiết hợp lệ
+     *  -> đang gõ TV (đặt dấu sớm), hiện transform chứ không restore raw.
+     *  Trái lại dấu ở đầu từ / đầu âm trước dấu không phải âm -> tiếng Anh. */
+    @Test
+    fun vietnameseEarlyToneShowsTransform() {
+        val showTransform = listOf(
+            "tiesnge" to "tiénge", // 's' sắc giữa từ, đuôi "nge" hợp lệ
+            "duosngf" to "duòng"   // 's'+'f' nuốt giữa, "duò"+"ng" hợp lệ
+        )
+        for ((raw, t) in showTransform) {
+            assertEquals(t, telex.transform(raw))
+            assertFalse(
+                "gõ TV đặt dấu sớm '$raw' không được live restore",
+                ViSyllable.liveRestorable(raw, t)
+            )
+        }
+        val keepRestore = listOf(
+            "west" to "ứet",       // dấu ở đầu từ
+            "doorway" to "dôửay",  // đầu âm "dôử" không hợp lệ
+            "expert" to "ẻpet",    // dấu ở đầu từ
+            "master" to "máter"    // đuôi "ter" không phải âm tiết
+        )
+        for ((raw, t) in keepRestore) {
+            assertEquals(t, telex.transform(raw))
+            assertTrue(
+                "tiếng Anh '$raw' phải live restore",
+                ViSyllable.liveRestorable(raw, t)
+            )
+        }
+    }
+
     // ---- E2E qua IME thật ----
 
     @Test
@@ -358,6 +389,11 @@ class LiveRestoreTest {
         h.type("dduowcs")
         h.idle()
         assertEquals("đước", h.composing())
+        // 1.4.1: đặt dấu sớm giữa từ vẫn hiện transform (không restore raw)
+        h.type(" ")
+        h.type("tiesnge")
+        h.idle()
+        assertEquals("tiénge", h.composing())
     }
 
     @Test

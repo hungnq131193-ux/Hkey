@@ -110,9 +110,28 @@ object ViSyllable {
     /** 1.4.0 (E2): như restorable nhưng non-strict — giữa lúc gõ, vần
      *  chỉ-đóng đứng trần ("việ") vẫn là trạng thái hợp lệ; chỉ live restore
      *  kết quả hoàn toàn không phải âm tiết ("window" -> "windoư"). Kết quả
-     *  1 ký tự ("dd"->"đ", "aa"->"â") luôn là trạng thái gõ dở. */
-    fun liveRestorable(raw: String, transformed: String): Boolean =
-        transformed.length >= 2 && transformed != raw &&
-            !isValid(transformed.lowercase(), strict = false) &&
-            transformed.any { it.code > 127 }
+     *  1 ký tự ("dd"->"đ", "aa"->"â") luôn là trạng thái gõ dở.
+     *  1.4.1: dấu thanh rơi giữa từ, nằm sau một âm tiết hợp lệ và trước
+     *  một âm tiết hợp lệ -> đang gõ TV (đặt dấu sớm kiểu "tiesnge" ->
+     *  "tié|nge"), không phải tiếng Anh — hiện transform để thấy dấu đã ăn.
+     *  "expect"->"ẻpet": dấu ở đầu từ -> vẫn restore; "west"->"ứet",
+     *  "doorway"->"dôửay": đầu âm trước dấu không phải âm -> vẫn restore. */
+    fun liveRestorable(raw: String, transformed: String): Boolean {
+        if (transformed.length < 2 || transformed == raw ||
+            isValid(transformed.lowercase(), strict = false) ||
+            transformed.none { it.code > 127 }
+        ) return false
+        for (i in 1 until transformed.length) {
+            if (ViGlyphs.decomposed(transformed[i]).second != 0) {
+                val pre = transformed.substring(0, i + 1)
+                    .map(ViGlyphs::bareChar).joinToString("")
+                val tail = transformed.substring(i + 1)
+                    .map(ViGlyphs::bareChar).joinToString("")
+                if (isValid(pre.lowercase(), strict = false) &&
+                    isValid(tail.lowercase(), strict = false)
+                ) return false
+            }
+        }
+        return true
+    }
 }

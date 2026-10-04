@@ -1,6 +1,7 @@
 package com.hkey.app.service
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
@@ -101,6 +102,17 @@ class HKeyIME : InputMethodService() {
     private val repeatHandler = Handler(Looper.getMainLooper())
 
     private val prefs get() = getSharedPreferences(SettingsKeys.PREFS, Context.MODE_PRIVATE)
+    // 1.4.0 (S2): đổi cài đặt áp ngay không cần restart — giữ field chống GC,
+    // đăng ký ở onCreate / huỷ ở onDestroy.
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        onPrefChanged(key)
+    }
+    /** Key ảnh hưởng giao diện bàn phím -> inflate lại ngay nếu đang hiện. */
+    private val uiPrefKeys = setOf(
+        SettingsKeys.KB_THEME, SettingsKeys.DARK_THEME_LEGACY,
+        SettingsKeys.KEY_SHAPE, SettingsKeys.KB_HEIGHT, SettingsKeys.KB_SIDE,
+        SettingsKeys.NUMBER_ROW
+    )
     private val learnedFile get() = File(filesDir, "learned_data.tsv")
     private val learnedStore get() = LearningStore(learnedFile)
     private var learnedDirty = false
@@ -110,6 +122,7 @@ class HKeyIME : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         SettingsMigration.run(prefs) // 1.4.0: kb_theme từ dark_theme cũ
+        prefs.registerOnSharedPreferenceChangeListener(prefListener) // S2
         // Nạp từ điển + mô hình n-gram + dữ liệu học ở thread nền; merge trên
         // main rồi dựng chỉ mục nền một lần — không chặn phím đầu (S1, G1-G3).
         Thread {
@@ -148,6 +161,7 @@ class HKeyIME : InputMethodService() {
 
     override fun onDestroy() {
         destroyed = true
+        prefs.unregisterOnSharedPreferenceChangeListener(prefListener) // S2
         kbView?.release() // dọn repeat/popup của view
         persistLearned() // ghi theo lô khi service dừng (3.6)
         super.onDestroy()
@@ -169,6 +183,26 @@ class HKeyIME : InputMethodService() {
     /** 1.10: không cho phép fullscreen/extract mode — bàn phím luôn ở đáy
      *  màn hình kể cả landscape. */
     override fun onEvaluateFullscreenMode(): Boolean = false
+
+    /** S2: cài đặt vừa đổi — đánh dấu bẩn chữ ký (engine/UI dựng lại ở
+     *  onStartInputView tới), đọc lại cờ rẻ ngay, và inflate lại view luôn
+     *  khi key thuộc nhóm giao diện còn bàn phím đang hiện. Không inflate
+     *  trong listener cho key khác — inflate nặng, chờ onStartInputView. */
+    private fun onPrefChanged(key: String?) {
+        engineSig = null
+        appliedUiSig = ""
+        optSound = prefs.getBoolean(SettingsKeys.SOUND, true)
+        optLiveRestore = prefs.getBoolean(SettingsKeys.LIVE_RESTORE, true)
+        optVibrate = prefs.getBoolean(SettingsKeys.VIBRATE, true)
+        optDoubleSpace = prefs.getBoolean(SettingsKeys.DOUBLE_SPACE, true)
+        kbView?.let {
+            it.soundEnabled = optSound
+            it.vibrateEnabled = optVibrate
+        }
+        if (key in uiPrefKeys && (isInputViewShown || inputView != null)) {
+            repeatHandler.post { if (!destroyed) setInputView(onCreateInputView()) }
+        }
+    }
 
     /** mmap vi_model.bin nếu asset được lưu không nén (noCompress), fallback
      *  đọc stream thường; null nếu file thiếu/hỏng (4.x). */

@@ -129,7 +129,9 @@ class HardwareKeysTest {
 
     @Test
     fun hwDisabledFallsThrough() {
-        val h = ImeHarness() // HW_KEYBOARD mặc định off
+        val h = ImeHarness(prefsSetup = {
+            putBoolean(SettingsKeys.HW_KEYBOARD, false)
+        })
         assertFalse(down(h, KeyEvent.KEYCODE_V))
     }
 

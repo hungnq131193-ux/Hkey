@@ -3,6 +3,7 @@ import java.io.File
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose) // 1.4.0 (U1)
 }
 
 // Release signing reuses the HPre release identity so every HKey upgrade
@@ -63,6 +64,7 @@ android {
     }
     buildFeatures {
         buildConfig = true // chỉ phục vụ log đo thời gian ở bản debug
+        compose = true     // 1.4.0 (U1)
     }
     if (!hpreSigningReady) {
         tasks.register("requireReleaseSigning") {
@@ -102,6 +104,25 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
+    // 1.4.0 (U1): màn cài đặt Compose — BOM ghim phiên bản chung
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
 }
+
+// 1.4.0 (U3): copy CHANGELOG.md -> res/raw cho màn Giới thiệu
+tasks.register("copyChangelog", Copy::class) {
+    from(rootProject.file("CHANGELOG.md"))
+    into("src/main/res/raw")
+    rename { "changelog.md" }
+}
+tasks.named("preBuild") { dependsOn("copyChangelog") }

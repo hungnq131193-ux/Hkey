@@ -299,7 +299,8 @@ class KeyboardView(context: Context) : View(context) {
     private val maxContentPx = 600 * density
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val minFling = ViewConfiguration.get(context).scaledMinimumFlingVelocity.toFloat()
-    private val lpMs = 360L
+    /** 1.4.0 (U3): nhịp nhấn giữ từ LONGPRESS_MS (200..700). */
+    var longPressMs = 360L
 
     // ---- lưới emoji cuộn dọc ----
     private var gridTop = 0f
@@ -1057,7 +1058,7 @@ class KeyboardView(context: Context) : View(context) {
                 // nhả mà ngón 2 chạm thì long-press của ngón 2 bắn sớm.
                 handler.removeCallbacks(longPress)
                 lpPid = pid
-                handler.postDelayed(longPress, lpMs)
+                handler.postDelayed(longPress, longPressMs)
             }
             MotionEvent.ACTION_MOVE -> {
                 for (i in 0 until e.pointerCount) {

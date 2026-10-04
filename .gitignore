@@ -42,3 +42,4 @@ tools/eval_corpus.txt
 
 # Worktrees
 .worktrees/
+app/src/main/res/raw/changelog.md

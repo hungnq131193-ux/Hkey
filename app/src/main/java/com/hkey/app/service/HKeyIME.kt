@@ -74,6 +74,11 @@ class HKeyIME : InputMethodService() {
     private var optVibrate = true
     private var optVibrateMs = 20 // P4: VIBRATE_STRENGTH
     private var optSoundVol = 50  // P4: SOUND_VOLUME
+    private var optAutoCorrect = true   // U3: AUTO_CORRECT
+    private var optSuggestions = true   // U3: SUGGESTIONS
+    private var optAutoCap = true       // U3: AUTO_CAP
+    private var optSpaceSwipe = true    // U3: SPACE_SWIPE
+    private var optLongpressMs = 360    // U3: LONGPRESS_MS
     private var contextCache: Pair<String, String>? = null // (từ trước, từ trước nữa)
     private val tailTracker = TailTracker(40) // bản sao cục bộ text đã commit — cắt IPC (6b)
     private var currentInputType = 0 // inputType của ô đang focus (cờ CAP_* cho capsWanted)
@@ -194,7 +199,7 @@ class HKeyIME : InputMethodService() {
     /** Điều kiện chung xử lý phím cứng: bật trong settings, có InputConnection,
      *  không rawMode, sự kiện từ phím vật lý thật (không phím hệ thống/ảo). */
     private fun hwGate(event: KeyEvent): Boolean =
-        prefs.getBoolean(SettingsKeys.HW_KEYBOARD, false) &&
+        prefs.getBoolean(SettingsKeys.HW_KEYBOARD, true) &&
             currentInputConnection != null && !rawMode &&
             HardwareKeys.usable(event)
 
@@ -277,11 +282,17 @@ class HKeyIME : InputMethodService() {
         optDoubleSpace = prefs.getBoolean(SettingsKeys.DOUBLE_SPACE, true)
         optVibrateMs = prefs.getInt(SettingsKeys.VIBRATE_STRENGTH, 20)
         optSoundVol = prefs.getInt(SettingsKeys.SOUND_VOLUME, 50)
+        optAutoCorrect = prefs.getBoolean(SettingsKeys.AUTO_CORRECT, true)
+        optSuggestions = prefs.getBoolean(SettingsKeys.SUGGESTIONS, true)
+        optAutoCap = prefs.getBoolean(SettingsKeys.AUTO_CAP, true)
+        optSpaceSwipe = prefs.getBoolean(SettingsKeys.SPACE_SWIPE, true)
+        optLongpressMs = prefs.getInt(SettingsKeys.LONGPRESS_MS, 360)
         kbView?.let {
             it.soundEnabled = optSound
             it.vibrateEnabled = optVibrate
             it.hapticMs = optVibrateMs
             it.soundVolume = optSoundVol
+            it.longPressMs = optLongpressMs.toLong()
         }
         if (key in uiPrefKeys && (isInputViewShown || inputView != null)) {
             repeatHandler.post { if (!destroyed) setInputView(onCreateInputView()) }
@@ -414,6 +425,11 @@ class HKeyIME : InputMethodService() {
         optDoubleSpace = prefs.getBoolean(SettingsKeys.DOUBLE_SPACE, true)
         optVibrateMs = prefs.getInt(SettingsKeys.VIBRATE_STRENGTH, 20)
         optSoundVol = prefs.getInt(SettingsKeys.SOUND_VOLUME, 50)
+        optAutoCorrect = prefs.getBoolean(SettingsKeys.AUTO_CORRECT, true)
+        optSuggestions = prefs.getBoolean(SettingsKeys.SUGGESTIONS, true)
+        optAutoCap = prefs.getBoolean(SettingsKeys.AUTO_CAP, true)
+        optSpaceSwipe = prefs.getBoolean(SettingsKeys.SPACE_SWIPE, true)
+        optLongpressMs = prefs.getInt(SettingsKeys.LONGPRESS_MS, 360)
         // Chỉ inflate lại khi đổi settings hoặc chưa có view — S2.
         val kh = prefs.getInt(SettingsKeys.KB_HEIGHT, 100)
         val ks = prefs.getInt(SettingsKeys.KB_SIDE, 0)
@@ -439,6 +455,7 @@ class HKeyIME : InputMethodService() {
             it.vibrateEnabled = optVibrate
             it.hapticMs = optVibrateMs
             it.soundVolume = optSoundVol
+            it.longPressMs = optLongpressMs.toLong()
             it.langVi = vietMode
             it.enterAction = enterActionOf(info.inputType, info.imeOptions)
         }
@@ -489,7 +506,8 @@ class HKeyIME : InputMethodService() {
     // Tự viết hoa chỉ bật ở ô text thường — không bật ở mật khẩu/email/url
     private fun computeAutoCap(info: EditorInfo) {
         val variation = info.inputType and InputType.TYPE_MASK_VARIATION
-        autoCap = info.inputType and InputType.TYPE_MASK_CLASS == InputType.TYPE_CLASS_TEXT &&
+        autoCap = optAutoCap &&
+            info.inputType and InputType.TYPE_MASK_CLASS == InputType.TYPE_CLASS_TEXT &&
             variation != InputType.TYPE_TEXT_VARIATION_PASSWORD &&
             variation != InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD &&
             variation != InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD &&
@@ -683,11 +701,12 @@ class HKeyIME : InputMethodService() {
             vibrateEnabled = optVibrate
             hapticMs = optVibrateMs
             soundVolume = optSoundVol
+            longPressMs = optLongpressMs.toLong()
             langVi = vietMode
             shifted = shiftOn
             capsLocked = shiftLocked
             onKey = { dispatchKey(it) }
-            onSpaceSwipe = { swipeCursor(it) }
+            onSpaceSwipe = { if (optSpaceSwipe) swipeCursor(it) }
             onRecentEmoji = { list ->
                 prefs.edit()
                     .putString(SettingsKeys.RECENT_EMOJI, list.joinToString("\n")).apply()
@@ -860,11 +879,7 @@ class HKeyIME : InputMethodService() {
 
     /** "k=v" mỗi dòng -> map gõ tắt; khóa khớp phím thô, không phân biệt hoa. */
     private fun parseMacros(s: String): Map<String, String> =
-        s.lines().mapNotNull {
-            val i = it.indexOf('=')
-            if (i <= 0) null
-            else it.substring(0, i).trim().lowercase() to it.substring(i + 1).trim()
-        }.toMap()
+        com.hkey.app.settings.MacroCodec.parse(s)
 
     private fun updateShiftUI() {
         kbView?.shifted = shiftOn
@@ -1054,7 +1069,7 @@ class HKeyIME : InputMethodService() {
         // 1.1: mảng trong url/email/ip ("io" trong "hu.io.vn") không sửa, không học.
         // 1.4: ô NO_SUGGESTIONS không tự sửa.
         val canFix = allowCorrection && expanded == null && !isProperNoun &&
-            !tokenGlued && !noSuggest
+            !tokenGlued && !noSuggest && optAutoCorrect // U3: AUTO_CORRECT
         // P2: đường async được sửa cả khi chốt phím thô (typed vẫn có glyph
         // để typoFix bắt — "khoogn" hiển thị thô vẫn thành "không"); đường
         // đồng bộ giữ guard cũ typedWord !== raw.
@@ -1441,7 +1456,7 @@ class HKeyIME : InputMethodService() {
     }
 
     private fun updateSuggestions() {
-        if (rawMode || noSuggest || !vietMode) {
+        if (rawMode || noSuggest || !optSuggestions || !vietMode) {
             suggestGen++ // hủy mọi request đang bay
             applyCandidates(CandidateSet("", "", ""))
             return

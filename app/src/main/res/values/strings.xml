@@ -1,4 +1,94 @@
 <resources>
     <string name="app_name">HKey</string>
     <string name="subtype_vi">Tiếng Việt (Telex/Context)</string>
+
+    <!-- Home -->
+    <string name="st_setup_title">Bắt đầu</string>
+    <string name="st_setup_enable">Bật HKey</string>
+    <string name="st_setup_enable_desc">Cho phép HKey làm bàn phím</string>
+    <string name="st_setup_pick">Chọn HKey</string>
+    <string name="st_setup_pick_desc">Đặt HKey làm bàn phím mặc định</string>
+    <string name="st_setup_done">Đã sẵn sàng — gõ thử bên dưới</string>
+    <string name="st_try">Gõ thử tại đây…</string>
+    <string name="st_sec_method">Kiểu gõ</string>
+    <string name="st_sec_smart">Gõ thông minh</string>
+    <string name="st_sec_ui">Giao diện</string>
+    <string name="st_sec_feedback">Phím &amp; phản hồi</string>
+    <string name="st_sec_hw">Bàn phím cứng</string>
+    <string name="st_sec_macro">Gõ tắt</string>
+    <string name="st_sec_data">Dữ liệu &amp; riêng tư</string>
+    <string name="st_sec_about">Giới thiệu</string>
+    <string name="st_back">Quay lại</string>
+
+    <!-- Kiểu gõ -->
+    <string name="st_method_telex">Telex</string>
+    <string name="st_method_simple">Telex đơn giản</string>
+    <string name="st_method_quick">Telex nhanh</string>
+    <string name="st_method_vni">VNI</string>
+    <string name="st_tone_new">Dấu kiểu mới</string>
+    <string name="st_vni_title">VNI dùng phím số</string>
+    <string name="st_vni_msg">VNI dùng phím số để bỏ dấu. Bật hàng số?</string>
+    <string name="st_vni_yes">Bật</string>
+    <string name="st_vni_later">Để sau</string>
+
+    <!-- Gõ thông minh -->
+    <string name="st_live_restore">Tự hoàn nguyên tiếng Anh</string>
+    <string name="st_live_restore_desc">new, view, power… hiện đúng chữ gốc ngay khi gõ</string>
+    <string name="st_spell_check">Kiểm tra chính tả dấu</string>
+    <string name="st_auto_correct">Tự sửa lỗi</string>
+    <string name="st_suggestions">Gợi ý từ</string>
+    <string name="st_auto_cap">Viết hoa đầu câu</string>
+    <string name="st_double_space">Space đôi thành ". "</string>
+
+    <!-- Giao diện -->
+    <string name="st_theme">Giao diện bàn phím</string>
+    <string name="st_shape">Kiểu phím</string>
+    <string name="st_shape_medium">Góc vừa</string>
+    <string name="st_shape_square">Góc vuông</string>
+    <string name="st_shape_round">Góc tròn</string>
+    <string name="st_height">Chiều cao phím</string>
+    <string name="st_side">Thu hẹp 2 bên</string>
+    <string name="st_number_row">Hàng số</string>
+
+    <!-- Phím & phản hồi -->
+    <string name="st_vibrate">Rung khi gõ</string>
+    <string name="st_vibrate_ms">Cường độ rung</string>
+    <string name="st_sound">Âm thanh phím</string>
+    <string name="st_sound_vol">Âm lượng</string>
+    <string name="st_longpress">Nhấn giữ</string>
+    <string name="st_space_swipe">Vuốt space dời con trỏ</string>
+
+    <!-- Bàn phím cứng -->
+    <string name="st_hw_enable">Nhận phím vật lý</string>
+    <string name="st_hw_hint">Shift+Space hoặc Ctrl+Space: đổi Việt/Anh</string>
+    <string name="st_hw_found">Đã phát hiện bàn phím</string>
+    <string name="st_hw_none">Chưa phát hiện bàn phím</string>
+
+    <!-- Gõ tắt -->
+    <string name="st_macro_add">Thêm gõ tắt</string>
+    <string name="st_macro_key">Khoá</string>
+    <string name="st_macro_val">Nội dung</string>
+    <string name="st_macro_key_err">Khoá không hợp lệ hoặc đã tồn tại</string>
+    <string name="st_macro_io">Nhập/Xuất văn bản</string>
+    <string name="st_macro_save">Lưu</string>
+    <string name="st_macro_discard">Bỏ thay đổi chưa lưu?</string>
+    <string name="st_macro_keep">Tiếp tục sửa</string>
+    <string name="st_macro_leave">Bỏ</string>
+
+    <!-- Dữ liệu -->
+    <string name="st_learned">Đã học %1$d từ</string>
+    <string name="st_clear_learn">Xoá dữ liệu học</string>
+    <string name="st_clear_learn_msg">Xoá toàn bộ từ bàn phím đã học?</string>
+    <string name="st_backup">Sao lưu cài đặt</string>
+    <string name="st_restore">Khôi phục</string>
+    <string name="st_restore_bad">File không hợp lệ</string>
+    <string name="st_restore_ok">Đã khôi phục %1$d cài đặt</string>
+    <string name="st_reset">Khôi phục mặc định</string>
+    <string name="st_reset_msg">Đặt lại mọi cài đặt về mặc định?</string>
+    <string name="st_ok">Đồng ý</string>
+    <string name="st_cancel">Huỷ</string>
+
+    <!-- Giới thiệu -->
+    <string name="st_version">Phiên bản</string>
+    <string name="st_changelog">Thay đổi</string>
 </resources>

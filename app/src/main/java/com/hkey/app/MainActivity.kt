@@ -16,16 +16,20 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.widget.doAfterTextChanged
+import com.hkey.app.settings.SettingsKeys
+import com.hkey.app.settings.SettingsMigration
 import com.hkey.app.ui.KbThemes
 import com.hkey.app.ui.ThemePreviewView
 import com.hkey.app.ui.ThemeSpinnerAdapter
 
 class MainActivity : AppCompatActivity() {
 
-    private val prefs get() = getSharedPreferences("hkey_settings", Context.MODE_PRIVATE)
+    private val prefs get() =
+        getSharedPreferences(SettingsKeys.PREFS, Context.MODE_PRIVATE)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SettingsMigration.run(prefs) // 1.4.0: kb_theme từ dark_theme cũ
         setContentView(R.layout.activity_main)
 
         findViewById<Button>(R.id.btn_enable_ime)?.setOnClickListener {

@@ -28,6 +28,8 @@ import com.hkey.app.engine.VniEngine
 import com.hkey.app.engine.TextContext
 import com.hkey.app.engine.ViModelBin
 import com.hkey.app.engine.ViSyllable
+import com.hkey.app.settings.SettingsKeys
+import com.hkey.app.settings.SettingsMigration
 import com.hkey.app.ui.KeyboardView
 import com.hkey.app.ui.KbKey
 import com.hkey.app.ui.KbField
@@ -95,7 +97,7 @@ class HKeyIME : InputMethodService() {
 
     private val repeatHandler = Handler(Looper.getMainLooper())
 
-    private val prefs get() = getSharedPreferences("hkey_settings", Context.MODE_PRIVATE)
+    private val prefs get() = getSharedPreferences(SettingsKeys.PREFS, Context.MODE_PRIVATE)
     private val learnedFile get() = File(filesDir, "learned_data.tsv")
     private val learnedStore get() = LearningStore(learnedFile)
     private var learnedDirty = false
@@ -104,6 +106,7 @@ class HKeyIME : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
+        SettingsMigration.run(prefs) // 1.4.0: kb_theme từ dark_theme cũ
         // Nạp từ điển + mô hình n-gram + dữ liệu học ở thread nền; merge trên
         // main rồi dựng chỉ mục nền một lần — không chặn phím đầu (S1, G1-G3).
         Thread {
@@ -213,8 +216,8 @@ class HKeyIME : InputMethodService() {
     /** Nút "Xóa dữ liệu học" ở MainActivity đặt cờ; IME tiêu thụ ở lần focus
      *  ô / hiện bàn phím kế tiếp (3.6). */
     private fun consumeLearningCleared() {
-        if (prefs.getBoolean("learning_cleared", false)) {
-            prefs.edit().remove("learning_cleared").apply()
+        if (prefs.getBoolean(SettingsKeys.LEARNING_CLEARED, false)) {
+            prefs.edit().remove(SettingsKeys.LEARNING_CLEARED).apply()
             predictor.clearLearned()
             learnedGen++ // 1.10: vô hiệu mọi ghi learned đang chạy nền
             learnedStore.clear()
@@ -248,11 +251,11 @@ class HKeyIME : InputMethodService() {
         // 2.x: dựng lại engine theo prefs (kiểu gõ + kiểu dấu + spell-check)
         // 6f: chỉ dựng lại khi chữ ký prefs đổi — không phải mỗi lần focus.
         val opts = EngineOptions(
-            method = ImeMethod.fromPref(prefs.getString("ime_method", null)),
-            newToneStyle = prefs.getBoolean("tone_new", true),
-            spellCheckTone = prefs.getBoolean("spell_check", true)
+            method = ImeMethod.fromPref(prefs.getString(SettingsKeys.METHOD, null)),
+            newToneStyle = prefs.getBoolean(SettingsKeys.TONE_NEW, true),
+            spellCheckTone = prefs.getBoolean(SettingsKeys.SPELL_CHECK, true)
         )
-        val macroStr = prefs.getString("macros", "") ?: ""
+        val macroStr = prefs.getString(SettingsKeys.MACROS, "") ?: ""
         val sig = listOf(opts.method, opts.newToneStyle, opts.spellCheckTone, macroStr)
         if (sig != engineSig) {
             engineSig = sig
@@ -274,13 +277,13 @@ class HKeyIME : InputMethodService() {
         shiftAuto = false
         shiftLocked = false
         consumeLearningCleared()
-        optSound = prefs.getBoolean("key_sound", true)
-        optVibrate = prefs.getBoolean("vibrate", true)
-        optDoubleSpace = prefs.getBoolean("double_space", true)
+        optSound = prefs.getBoolean(SettingsKeys.SOUND, true)
+        optVibrate = prefs.getBoolean(SettingsKeys.VIBRATE, true)
+        optDoubleSpace = prefs.getBoolean(SettingsKeys.DOUBLE_SPACE, true)
         // Chỉ inflate lại khi đổi settings hoặc chưa có view — S2.
-        val kh = prefs.getInt("kb_height", 100)
-        val ks = prefs.getInt("kb_side", 0)
-        val kn = prefs.getBoolean("number_row", false)
+        val kh = prefs.getInt(SettingsKeys.KB_HEIGHT, 100)
+        val ks = prefs.getInt(SettingsKeys.KB_SIDE, 0)
+        val kn = prefs.getBoolean(SettingsKeys.NUMBER_ROW, false)
         val uiSig = uiSignature()
         currentField = fieldOf(info.inputType)
         if (inputView == null || kh != appliedKbHeight || ks != appliedKbSide ||
@@ -480,17 +483,18 @@ class HKeyIME : InputMethodService() {
     /** 1.3.2: theme đã chọn ("system" = theo máy); bản cũ chỉ có dark_theme
      *  -> prefId chuyển cờ cũ thành "dark"/"light". */
     private fun themeId() = KbThemes.prefId(
-        prefs.getString("kb_theme", null), prefs.getBoolean("dark_theme", true))
+        prefs.getString(SettingsKeys.KB_THEME, null),
+        prefs.getBoolean(SettingsKeys.DARK_THEME_LEGACY, true))
 
     private fun currentPalette() = KbThemes.palette(themeId(), isNight())
 
     private fun currentCornerDp() =
-        KbThemes.cornerDp(prefs.getString("key_shape", "medium"))
+        KbThemes.cornerDp(prefs.getString(SettingsKeys.KEY_SHAPE, "medium"))
 
     /** Chữ ký giao diện đang áp (theme đã resolve + kiểu phím). */
     private fun uiSignature() =
         KbThemes.resolveId(themeId(), isNight()) + "|" +
-            (prefs.getString("key_shape", "medium") ?: "medium")
+            (prefs.getString(SettingsKeys.KEY_SHAPE, "medium") ?: "medium")
 
     override fun onCreateInputView(): View {
         val root = layoutInflater.inflate(R.layout.keyboard_view, null)
@@ -515,13 +519,13 @@ class HKeyIME : InputMethodService() {
 
         // 3.x: bàn phím tự vẽ — hit theo ô không rớt khe, trượt/đa chạm,
         // nhấn giữ ra phụ, giữ ⌫ lặp, vuốt space dời con trỏ.
-        val kh = prefs.getInt("kb_height", 100)
-        val ks = prefs.getInt("kb_side", 0)
+        val kh = prefs.getInt(SettingsKeys.KB_HEIGHT, 100)
+        val ks = prefs.getInt(SettingsKeys.KB_SIDE, 0)
         appliedKbHeight = kh
         appliedKbSide = ks
         val kb = KeyboardView(this).apply {
             fieldKind = currentField
-            recentEmoji = (prefs.getString("recent_emoji", "") ?: "")
+            recentEmoji = (prefs.getString(SettingsKeys.RECENT_EMOJI, "") ?: "")
                 .split('\n').filter { it.isNotEmpty() }
             configure(kh, ks, currentPalette(), appliedNumRow, currentCornerDp())
             soundEnabled = optSound
@@ -532,7 +536,8 @@ class HKeyIME : InputMethodService() {
             onKey = { dispatchKey(it) }
             onSpaceSwipe = { swipeCursor(it) }
             onRecentEmoji = { list ->
-                prefs.edit().putString("recent_emoji", list.joinToString("\n")).apply()
+                prefs.edit()
+                    .putString(SettingsKeys.RECENT_EMOJI, list.joinToString("\n")).apply()
             }
         }
         kbView = kb

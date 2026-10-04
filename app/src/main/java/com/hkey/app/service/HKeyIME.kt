@@ -92,6 +92,7 @@ class HKeyIME : InputMethodService() {
     // (cập nhật ngay khi edit, không chờ update).
     private val expectedSels = ExpectedSels()
     private var shownComposingLen = 0 // độ dài text đang hiển thị ở vùng composing
+    private var currentDisplay = "" // 1.4.0: text đang ở vùng composing (sau live restore có thể = raw)
     private var currentField = KbField.TEXT
     @Volatile private var destroyed = false
 
@@ -151,9 +152,16 @@ class HKeyIME : InputMethodService() {
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        finalizeWord(currentInputConnection) // 1.4.0: chốt từ đang gõ dở
         kbView?.release() // 1.10: ẩn phím -> dừng nhấn giữ ⌫, đóng popup
         persistLearned() // mất focus -> ghi luôn nếu bẩn
         super.onFinishInputView(finishingInput)
+    }
+
+    override fun onFinishInput() {
+        // 1.4.0: đổi ô nhập khi đang gõ dở -> chốt từ tại chỗ cũ trước
+        if (currentComposingWord.isNotEmpty()) finalizeWord(currentInputConnection)
+        super.onFinishInput()
     }
 
     /** 1.10: không cho phép fullscreen/extract mode — bàn phím luôn ở đáy
@@ -388,6 +396,7 @@ class HKeyIME : InputMethodService() {
         val base = replaceBase()
         ic.commitText(t, 1)
         shownComposingLen = 0
+        currentDisplay = ""
         noteCursor(base + t.length)
     }
 
@@ -395,6 +404,7 @@ class HKeyIME : InputMethodService() {
         val base = replaceBase()
         ic.setComposingText(t, 1)
         shownComposingLen = t.length
+        currentDisplay = t
         noteCursor(base + t.length)
     }
 
@@ -434,9 +444,7 @@ class HKeyIME : InputMethodService() {
         val selfEdit = expected || (currentComposingWord.isNotEmpty() &&
             newSelStart == newSelEnd && candidatesStart >= 0 && newSelStart == candidatesEnd)
         if (currentComposingWord.isNotEmpty() && !selfEdit) {
-            currentInputConnection?.finishComposingText()
-            shownComposingLen = 0
-            currentComposingWord.clear()
+            finalizeWord(currentInputConnection) // 1.4.0: chốt từ tại chỗ cũ, không sửa
             requestSuggestions()
         }
         if (!selfEdit) { // con trỏ/ngữ cảnh đổi thật mới vô hiệu cả tail-cache
@@ -859,7 +867,16 @@ class HKeyIME : InputMethodService() {
     /** Chốt từ đang gõ; nếu từ sai chính tả và có phương án sửa đủ gần
      *  (lệch đúng 1 ký tự, nằm trong từ điển) thì tự thay bằng từ đúng.
      *  Bản tự sửa được đánh dấu để ⌫/chạm candidate hoàn tác lại chữ đã gõ. */
-    private fun commitComposing() {
+    private fun commitComposing() = commitWord(true, currentInputConnection)
+
+    /** 1.4.0: chốt từ khi người dùng RỜI từ (chạm chỗ khác/đổi ô/ẩn phím):
+     *  áp restore phím thô + macro, KHÔNG auto-correct, có học. */
+    private fun finalizeWord(ic: android.view.inputmethod.InputConnection?) =
+        commitWord(false, ic)
+
+    private fun commitWord(
+        allowCorrection: Boolean, ic: android.view.inputmethod.InputConnection?
+    ) {
         if (currentComposingWord.isEmpty()) return
         val (prev, prev2) = contextPairBeforeCursor()
         val raw = currentComposingWord.toString()
@@ -873,8 +890,8 @@ class HKeyIME : InputMethodService() {
         val expanded = macros[raw.lowercase()]
         // 1.1: mảng trong url/email/ip ("io" trong "hu.io.vn") không sửa, không học.
         // 1.4: ô NO_SUGGESTIONS không tự sửa.
-        val fixed = if (expanded != null || isProperNoun || tokenGlued ||
-            typedWord === raw || noSuggest
+        val fixed = if (!allowCorrection || expanded != null || isProperNoun ||
+            tokenGlued || typedWord === raw || noSuggest
         ) null
             // 1.3.2: correction bỏ qua chuỗi không-phải-âm-tiết -> typoFix
             // bắt lỗi đảo ký tự / sót ký tự giữa từ ("khôgn" -> "không")
@@ -883,8 +900,26 @@ class HKeyIME : InputMethodService() {
             // 1.2: bản sửa trả chữ thường — áp lại kiểu hoa của từ đã gõ
             ?.let { TextContext.matchCase(typed, it) }
         val word = expanded ?: fixed ?: typedWord
-        currentInputConnection?.let { icCommit(it, word) }
-        tailTracker.append(word)
+        if (ic != null) {
+            if (allowCorrection) {
+                icCommit(ic, word)
+            } else {
+                // 1.4.0: ghi từ vào đúng vùng composing gốc bằng
+                // setComposingText + finish (không commitText) — không đẩy
+                // con trỏ người dùng; không noteCursor. Trùng hiển thị thì
+                // chỉ finish như cũ.
+                ic.beginBatchEdit()
+                try {
+                    if (word != currentDisplay) ic.setComposingText(word, 1)
+                    ic.finishComposingText()
+                } finally {
+                    ic.endBatchEdit()
+                }
+                shownComposingLen = 0
+                currentDisplay = ""
+            }
+        }
+        if (allowCorrection) tailTracker.append(word) else tailTracker.invalidate()
         if (!tokenGlued) learn(prev, word, prev2)
         lastCommittedWord = word
         lastAutoFix = if (fixed != null) AutoFix(word, typed, raw) else null

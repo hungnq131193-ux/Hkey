@@ -3,13 +3,19 @@ package com.hkey.app.settings.ui.sections
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Button
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.IconButton
@@ -26,6 +32,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.hkey.app.R
@@ -65,25 +72,39 @@ fun MacroScreen(vm: SettingsViewModel) {
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            LazyColumn(Modifier.weight(1f)) {
+            // 1.5.2: chừa đáy cho FAB — trước đây FAB che mục cuối
+            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(top = 4.dp, bottom = 88.dp)) {
                 items(items) { (k, v) ->
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(k, Modifier.weight(0.35f), style = MaterialTheme.typography.bodyLarge)
-                        Text(v, Modifier.weight(0.5f), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            k, Modifier.weight(0.35f),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            v, Modifier.weight(0.65f), style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis
+                        )
                         IconButton(onClick = {
                             editing = k to v
                             editKey = k; editVal = v; editErr = false
-                        }) { Text("✎") }
+                        }) { Icon(Icons.Filled.Edit, stringResource(R.string.st_macro_add)) }
                         IconButton(onClick = {
                             commitItems(items.filter { it.first != k })
-                        }) { Text("✕") }
+                        }) {
+                            Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 88.dp, top = 8.dp, bottom = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 TextButton(onClick = {
                     ioText = MacroCodec.serialize(items.toMap())
                 }) { Text(stringResource(R.string.st_macro_io)) }
@@ -99,7 +120,7 @@ fun MacroScreen(vm: SettingsViewModel) {
                 editing = "" to ""; editKey = ""; editVal = ""; editErr = false
             },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
-        ) { Text("+") }
+        ) { Icon(Icons.Filled.Add, stringResource(R.string.st_macro_add)) }
     }
 
     // Dialog sửa/thêm — validate khoá: không rỗng, không space/'=', không

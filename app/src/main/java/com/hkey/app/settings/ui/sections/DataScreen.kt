@@ -3,13 +3,15 @@ package com.hkey.app.settings.ui.sections
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -27,7 +29,11 @@ import androidx.compose.ui.unit.dp
 import com.hkey.app.BuildConfig
 import com.hkey.app.R
 import com.hkey.app.settings.SettingsViewModel
+import com.hkey.app.settings.ui.components.ActionRow
+import com.hkey.app.settings.ui.components.GroupCard
+import com.hkey.app.settings.ui.components.NavDivider
 import com.hkey.app.settings.ui.components.SectionHeader
+import com.hkey.app.settings.ui.components.SettingsPage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -86,32 +92,47 @@ fun DataScreen(vm: SettingsViewModel) {
         }
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        SectionHeader(
-            if (learned >= 0) stringResource(R.string.st_learned, learned)
-            else "…"
+    // 1.5.2: hàng hành động có icon thay 4 nút đặc giống hệt nhau; thao tác
+    // phá huỷ tô màu lỗi, tách nhóm riêng.
+    SettingsPage {
+        SectionHeader("Sao lưu")
+        GroupCard {
+            ActionRow(
+                stringResource(R.string.st_backup), "Lưu cài đặt + gõ tắt ra file JSON",
+                Icons.Filled.Share
+            ) { saveLauncher.launch("hkey-settings.json") }
+            NavDivider()
+            ActionRow(
+                stringResource(R.string.st_restore), "Nạp lại từ file đã sao lưu",
+                Icons.Filled.Refresh
+            ) { openLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }
+        }
+        SectionHeader("Riêng tư")
+        GroupCard {
+            ActionRow(
+                stringResource(R.string.st_clear_learn),
+                if (learned >= 0) stringResource(R.string.st_learned, learned) else "…",
+                Icons.Filled.Delete, danger = true
+            ) { askClear = true }
+            NavDivider()
+            ActionRow(
+                stringResource(R.string.st_reset), "Đưa mọi cài đặt về như mới cài",
+                Icons.Filled.Warning, danger = true
+            ) { askReset = true }
+        }
+        Text(
+            "HKey chạy hoàn toàn offline — dữ liệu học chỉ nằm trên máy này.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp)
         )
-        Button(
-            onClick = { askClear = true },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
-        ) { Text(stringResource(R.string.st_clear_learn)) }
-        Button(
-            onClick = { saveLauncher.launch("hkey-settings.json") },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
-        ) { Text(stringResource(R.string.st_backup)) }
-        Button(
-            onClick = { openLauncher.launch(arrayOf("application/json")) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
-        ) { Text(stringResource(R.string.st_restore)) }
-        Button(
-            onClick = { askReset = true },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
-        ) { Text(stringResource(R.string.st_reset)) }
     }
 
     if (askClear) {
         AlertDialog(
             onDismissRequest = { askClear = false },
+            icon = { Icon(Icons.Filled.Delete, null) },
+            title = { Text(stringResource(R.string.st_clear_learn)) },
             text = { Text(stringResource(R.string.st_clear_learn_msg)) },
             confirmButton = {
                 TextButton(onClick = {
@@ -128,6 +149,8 @@ fun DataScreen(vm: SettingsViewModel) {
     if (askReset) {
         AlertDialog(
             onDismissRequest = { askReset = false },
+            icon = { Icon(Icons.Filled.Warning, null) },
+            title = { Text(stringResource(R.string.st_reset)) },
             text = { Text(stringResource(R.string.st_reset_msg)) },
             confirmButton = {
                 TextButton(onClick = {
@@ -154,18 +177,51 @@ fun AboutScreen() {
                 .bufferedReader().readText()
         }.getOrDefault("")
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        SectionHeader(stringResource(R.string.st_version))
-        Text(
-            BuildConfig.VERSION_NAME,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
+    // 1.5.2: changelog dựng theo dòng — "## x" thành tiêu đề phiên bản,
+    // "- " thành gạch đầu dòng; trước đây đổ nguyên markdown thô.
+    SettingsPage {
+        GroupCard {
+            Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    "${stringResource(R.string.st_version)} ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         SectionHeader(stringResource(R.string.st_changelog))
-        Text(
-            changelog,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
+        GroupCard {
+            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                changelogBlocks(changelog).forEach { (head, body) ->
+                    if (head) Text(
+                        body, style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                    ) else Text(
+                        "•  $body", style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
+            }
+        }
     }
+}
+
+/** Gộp changelog markdown thành khối: (true, "1.5.2 …") cho "## ",
+ *  (false, nội dung gạch đầu dòng) — dòng tiếp nối nối vào mục trước. */
+internal fun changelogBlocks(md: String): List<Pair<Boolean, String>> {
+    val out = mutableListOf<Pair<Boolean, String>>()
+    for (raw in md.lines()) {
+        val l = raw.trim()
+        when {
+            l.isEmpty() || l.startsWith("# ") -> {}
+            l.startsWith("## ") -> out += true to l.removePrefix("## ")
+            l.startsWith("- ") -> out += false to l.removePrefix("- ")
+            out.isNotEmpty() && !out.last().first ->
+                out[out.size - 1] = false to out.last().second + " " + l
+            else -> out += false to l
+        }
+    }
+    return out
 }

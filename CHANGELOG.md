@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.5.2 (versionCode 28)
+
+- Menu cài đặt làm lại đồng bộ: mọi màn con chia nhóm có tiêu đề, nằm
+  trong card bo góc, hàng cao tối thiểu 56dp, có vạch ngăn mảnh.
+- Thanh trượt hiện tên bên trái, giá trị bên phải (màu nhấn).
+- Dữ liệu & riêng tư: hàng có icon thay 4 nút giống hệt nhau; Xoá dữ
+  liệu học / Khôi phục mặc định tô đỏ, hộp xác nhận có tiêu đề + icon.
+- Giới thiệu: thẻ phiên bản + changelog hiển thị theo mục, không còn
+  đổ markdown thô.
+- Sửa lỗi: mũi tên ← ở Gõ tắt bỏ qua hộp "Bỏ thay đổi chưa lưu?" làm
+  mất gõ tắt chưa lưu — giờ đi chung đường với phím Back.
+- Sửa lỗi: nút + che mục gõ tắt cuối và nút Lưu; lưới theme hàng cuối
+  không còn bị kéo giãn; tên theme dài được cắt gọn.
+- Khôi phục chấp nhận file JSON mà trình quản lý file báo sai kiểu.
+
 ## 1.5.1 (versionCode 27)
 
 - Sửa cài đặt "Hàng số": bật/tắt giờ áp ngay lên bàn phím đang hiện —

@@ -1,6 +1,7 @@
 package com.hkey.app.settings.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -9,10 +10,12 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
@@ -23,6 +26,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -82,13 +86,19 @@ fun SettingsApp(vm: SettingsViewModel) {
         Screen.ABOUT -> stringResource(R.string.st_sec_about)
     }
 
+    // 1.5.2: mũi tên ← đi qua OnBackPressedDispatcher như phím Back — trước
+    // đây nhảy thẳng về Home, bỏ qua hộp "Bỏ thay đổi chưa lưu?" của Gõ tắt.
+    val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(title) },
                 navigationIcon = {
                     if (cur != Screen.HOME) {
-                        IconButton(onClick = { screen = Screen.HOME.name }) {
+                        IconButton(onClick = {
+                            backDispatcher?.onBackPressed() ?: run { screen = Screen.HOME.name }
+                        }) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = stringResource(R.string.st_back)
@@ -110,6 +120,7 @@ fun SettingsApp(vm: SettingsViewModel) {
                         slideOutHorizontally(tween(200)) { if (fwd) -it / 8 else it / 8 } +
                         fadeOut(tween(160))
                 },
+                modifier = Modifier.fillMaxSize(),
                 label = "screen"
             ) { s ->
                 when (s) {
@@ -136,11 +147,15 @@ private fun HomeScreen(vm: SettingsViewModel, go: (Screen) -> Unit) {
     val themeName = KbThemes.ALL.find { it.id == st.kbTheme }?.name
         ?: stringResource(R.string.st_theme_system)
 
-    LazyColumn(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         if (!enabled || !selected) {
             item {
                 Card(
-                    Modifier.fillMaxWidth().padding(16.dp)
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
                 ) {
                     Column(Modifier.padding(16.dp)) {
                         Text(
@@ -171,6 +186,7 @@ private fun HomeScreen(vm: SettingsViewModel, go: (Screen) -> Unit) {
             OutlinedTextField(
                 value = t, onValueChange = { t = it },
                 placeholder = { Text(stringResource(R.string.st_try)) },
+                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             )
@@ -220,7 +236,7 @@ private fun HomeScreen(vm: SettingsViewModel, go: (Screen) -> Unit) {
         item {
             GroupCard {
                 NavRow(
-                    stringResource(R.string.st_sec_data), "",
+                    stringResource(R.string.st_sec_data), "Sao lưu · khôi phục · xoá học",
                     Icons.Filled.Lock
                 ) { go(Screen.DATA) }
                 NavDivider()

@@ -1,9 +1,5 @@
 package com.hkey.app.settings.ui.sections
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -13,12 +9,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.hkey.app.R
 import com.hkey.app.settings.SettingsKeys
 import com.hkey.app.settings.SettingsViewModel
 import com.hkey.app.settings.ui.components.GroupCard
+import com.hkey.app.settings.ui.components.SectionHeader
+import com.hkey.app.settings.ui.components.SettingsPage
 import com.hkey.app.settings.ui.components.RadioRow
 import com.hkey.app.settings.ui.components.SwitchRow
 
@@ -35,7 +32,8 @@ fun MethodScreen(vm: SettingsViewModel) {
         Triple("vni", stringResource(R.string.st_method_vni), "tieng61 vie65t → tiếng việt")
     )
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    SettingsPage {
+        SectionHeader("Bộ gõ")
         GroupCard {
             items.forEach { (id, label, example) ->
                 RadioRow(label, example, st.method == id) {
@@ -44,6 +42,7 @@ fun MethodScreen(vm: SettingsViewModel) {
                 }
             }
         }
+        SectionHeader("Đặt dấu")
         GroupCard {
             SwitchRow(
                 stringResource(R.string.st_tone_new), st.toneNew,

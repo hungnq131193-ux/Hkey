@@ -11,14 +11,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -29,6 +27,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -39,7 +39,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.hkey.app.R
 import com.hkey.app.settings.SettingsKeys
 import com.hkey.app.settings.SettingsViewModel
+import com.hkey.app.settings.ui.components.GroupCard
+import com.hkey.app.settings.ui.components.RowDivider
 import com.hkey.app.settings.ui.components.SectionHeader
+import com.hkey.app.settings.ui.components.SettingsPage
 import com.hkey.app.settings.ui.components.SliderRow
 import com.hkey.app.settings.ui.components.SwitchRow
 import com.hkey.app.ui.KbThemes
@@ -56,38 +59,50 @@ fun InterfaceScreen(vm: SettingsViewModel) {
     // máy nâng cấp từ 1.3.x)
     val themeId = st.kbTheme ?: KbThemes.SYSTEM
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    SettingsPage {
         // Preview bàn phím thật — tái dùng ThemePreviewView qua AndroidView
-        AndroidView(
-            factory = { ThemePreviewView(it) },
-            update = { it.setTheme(themeId, st.keyShape) },
-            modifier = Modifier.fillMaxWidth().height(180.dp).padding(16.dp)
-        )
+        GroupCard {
+            AndroidView(
+                factory = { ThemePreviewView(it) },
+                update = { it.setTheme(themeId, st.keyShape) },
+                modifier = Modifier.fillMaxWidth().height(160.dp).padding(8.dp)
+            )
+        }
 
         SectionHeader(stringResource(R.string.st_theme))
         // 1.5.0: FlowRow thay LazyVerticalGrid cao cố định — lưới nằm trong
         // cuộn ngoài không được là Lazy nữa (trước đây grid 300dp nuốt chạm).
-        FlowRow(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            maxItemsInEachRow = 3
-        ) {
-            KbThemes.ALL.forEach { t ->
-                val sel = t.id == themeId
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.weight(1f)
-                        .clickable { vm.set(SettingsKeys.KB_THEME, t.id) }
-                ) {
-                    ThemeThumb(
-                        t.id, night, sel,
-                        Modifier.aspectRatio(1.6f).fillMaxWidth()
-                    )
-                    Text(
-                        t.name, style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1
-                    )
+        // 1.5.2: hàng cuối thiếu ô được đệm Spacer -> thumbnail không bị kéo giãn.
+        GroupCard {
+            FlowRow(
+                Modifier.fillMaxWidth().padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                maxItemsInEachRow = COLS
+            ) {
+                KbThemes.ALL.forEach { t ->
+                    val sel = t.id == themeId
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { vm.set(SettingsKeys.KB_THEME, t.id) }
+                    ) {
+                        ThemeThumb(
+                            t.id, night, sel,
+                            Modifier.aspectRatio(1.6f).fillMaxWidth()
+                        )
+                        Text(
+                            t.name, style = MaterialTheme.typography.labelMedium,
+                            color = if (sel) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+                repeat((COLS - KbThemes.ALL.size % COLS) % COLS) {
+                    Spacer(Modifier.weight(1f))
                 }
             }
         }
@@ -98,31 +113,39 @@ fun InterfaceScreen(vm: SettingsViewModel) {
             "square" to stringResource(R.string.st_shape_square),
             "round" to stringResource(R.string.st_shape_round)
         )
-        SingleChoiceSegmentedButtonRow(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-        ) {
-            shapes.forEachIndexed { i, (id, label) ->
-                SegmentedButton(
-                    selected = st.keyShape == id,
-                    onClick = { vm.set(SettingsKeys.KEY_SHAPE, id) },
-                    shape = SegmentedButtonDefaults.itemShape(i, shapes.size)
-                ) { Text(label) }
+        GroupCard {
+            SingleChoiceSegmentedButtonRow(
+                Modifier.fillMaxWidth().padding(12.dp)
+            ) {
+                shapes.forEachIndexed { i, (id, label) ->
+                    SegmentedButton(
+                        selected = st.keyShape == id,
+                        onClick = { vm.set(SettingsKeys.KEY_SHAPE, id) },
+                        shape = SegmentedButtonDefaults.itemShape(i, shapes.size)
+                    ) { Text(label, maxLines = 1) }
+                }
             }
         }
 
-        SliderRow(
-            stringResource(R.string.st_height), st.kbHeight, 70..130,
-            { vm.set(SettingsKeys.KB_HEIGHT, it) }, unit = "%"
-        )
-        SliderRow(
-            stringResource(R.string.st_side), st.kbSide, 0..24,
-            { vm.set(SettingsKeys.KB_SIDE, it) }, unit = "dp"
-        )
-        SwitchRow(stringResource(R.string.st_number_row), st.numberRow) {
-            vm.set(SettingsKeys.NUMBER_ROW, it)
+        SectionHeader("Bố cục")
+        GroupCard {
+            SliderRow(
+                stringResource(R.string.st_height), st.kbHeight, 70..130,
+                { vm.set(SettingsKeys.KB_HEIGHT, it) }, unit = "%"
+            )
+            SliderRow(
+                stringResource(R.string.st_side), st.kbSide, 0..24,
+                { vm.set(SettingsKeys.KB_SIDE, it) }, unit = "dp"
+            )
+            RowDivider()
+            SwitchRow(stringResource(R.string.st_number_row), st.numberRow) {
+                vm.set(SettingsKeys.NUMBER_ROW, it)
+            }
         }
     }
 }
+
+private const val COLS = 3
 
 /** Thumbnail theme: nền + 2 hàng "phím" vẽ Canvas theo palette thật.
  *  Viền đổi màu/độ dày mềm khi được chọn. */

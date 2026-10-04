@@ -30,6 +30,19 @@ class SettingsApplyTest {
         assertNotSame(v1, v2)
     }
 
+    /** 1.5.1: bật hàng số khi bàn phím đang hiện -> view mới phải có
+     *  numberRow=true ngay, không chờ lần hiện sau (appliedNumRow cũ bị
+     *  dùng lại trong onCreateInputView -> inflate ra view thiếu hàng). */
+    @Test
+    fun numberRowToggleAppliesToLiveView() {
+        val h = ImeHarness()
+        h.ime.getSharedPreferences(SettingsKeys.PREFS, 0).edit()
+            .putBoolean(SettingsKeys.NUMBER_ROW, true).commit()
+        h.idle()
+        val kb = field(h.ime, "kbView") as com.hkey.app.ui.KeyboardView
+        assertTrue(kb.numberRow)
+    }
+
     @Test
     fun enginePrefChangeOnlyDirtiesSig() {
         val h = ImeHarness()

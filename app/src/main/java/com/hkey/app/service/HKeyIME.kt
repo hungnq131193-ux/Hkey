@@ -712,6 +712,10 @@ class HKeyIME : InputMethodService() {
         val ks = prefs.getInt(SettingsKeys.KB_SIDE, 0)
         appliedKbHeight = kh
         appliedKbSide = ks
+        // 1.5.1: đọc lại pref — onPrefChanged inflate lại khi bàn phím đang
+        // hiện mà không qua onStartInputView, appliedNumRow cũ làm hàng số
+        // không đổi dù đã bật/tắt trong cài đặt.
+        appliedNumRow = prefs.getBoolean(SettingsKeys.NUMBER_ROW, false)
         val kb = KeyboardView(this).apply {
             fieldKind = currentField
             recentEmoji = (prefs.getString(SettingsKeys.RECENT_EMOJI, "") ?: "")

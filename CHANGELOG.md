@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1 (versionCode 27)
+
+- Sửa cài đặt "Hàng số": bật/tắt giờ áp ngay lên bàn phím đang hiện —
+  trước đây đổi trong cài đặt nhưng bàn phím vẫn giữ hàng cũ (view
+  inflate lại vẫn dùng giá trị đã lưu thay vì đọc lại cài đặt).
+
 ## 1.5.0 (versionCode 26)
 
 - Tự sửa không còn cắt chữ tiếng Anh/mã: "plan"→"lan", "code"→"coe",

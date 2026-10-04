@@ -937,18 +937,26 @@ class HKeyIME : InputMethodService() {
 
     /** Chốt từ đang gõ; nếu từ sai chính tả và có phương án sửa đủ gần
      *  (lệch đúng 1 ký tự, nằm trong từ điển) thì tự thay bằng từ đúng.
-     *  Bản tự sửa được đánh dấu để ⌫/chạm candidate hoàn tác lại chữ đã gõ. */
-    private fun commitComposing() = commitWord(true, currentInputConnection)
+     *  Bản tự sửa được đánh dấu để ⌫/chạm candidate hoàn tác lại chữ đã gõ.
+     *  P2: [asyncFix]=true (space) — commit ngay rồi sửa nền; các đường
+     *  khác (enter/dấu câu) giữ đồng bộ <=30 ms. */
+    private fun commitComposing(asyncFix: Boolean = false) =
+        commitWord(true, currentInputConnection, asyncFix)
 
     /** 1.4.0: chốt từ khi người dùng RỜI từ (chạm chỗ khác/đổi ô/ẩn phím):
      *  áp restore phím thô + macro, KHÔNG auto-correct, có học. */
     private fun finalizeWord(ic: android.view.inputmethod.InputConnection?) =
         commitWord(false, ic)
 
+    private var fixGen = 0 // P2: số hiệu bản sửa nền — lệch thì bỏ
+
     private fun commitWord(
-        allowCorrection: Boolean, ic: android.view.inputmethod.InputConnection?
+        allowCorrection: Boolean,
+        ic: android.view.inputmethod.InputConnection?,
+        asyncFix: Boolean = false
     ) {
         if (currentComposingWord.isEmpty()) return
+        fixGen++ // mọi lần chốt mới vô hiệu bản sửa nền đang bay
         val (prev, prev2) = contextPairBeforeCursor()
         val raw = currentComposingWord.toString()
         val typed = engine.transform(raw)
@@ -961,9 +969,12 @@ class HKeyIME : InputMethodService() {
         val expanded = macros[raw.lowercase()]
         // 1.1: mảng trong url/email/ip ("io" trong "hu.io.vn") không sửa, không học.
         // 1.4: ô NO_SUGGESTIONS không tự sửa.
-        val fixed = if (!allowCorrection || expanded != null || isProperNoun ||
-            tokenGlued || typedWord === raw || noSuggest
-        ) null
+        val canFix = allowCorrection && expanded == null && !isProperNoun &&
+            !tokenGlued && !noSuggest
+        // P2: đường async được sửa cả khi chốt phím thô (typed vẫn có glyph
+        // để typoFix bắt — "khoogn" hiển thị thô vẫn thành "không"); đường
+        // đồng bộ giữ guard cũ typedWord !== raw.
+        val fixed = if (!canFix || asyncFix || typedWord === raw) null
             else computeCorrection(typed, prev, prev2)
             // 1.2: bản sửa trả chữ thường — áp lại kiểu hoa của từ đã gõ
             ?.let { TextContext.matchCase(typed, it) }
@@ -988,7 +999,8 @@ class HKeyIME : InputMethodService() {
             }
         }
         if (allowCorrection) tailTracker.append(word) else tailTracker.invalidate()
-        if (!tokenGlued) learn(prev, word, prev2)
+        val pendingFix = asyncFix && canFix
+        if (!tokenGlued && !pendingFix) learn(prev, word, prev2)
         lastCommittedWord = word
         // 1.4.0: từ chốt là chính phím thô (restorable) -> đánh dấu để
         // resumeWord không kéo tiếng Anh về buffer biến dạng
@@ -996,10 +1008,54 @@ class HKeyIME : InputMethodService() {
         lastAutoFix = if (fixed != null) AutoFix(word, typed, raw) else null
         currentComposingWord.clear()
         contextCache = null
+        if (pendingFix) {
+            val gen = fixGen
+            val p = prev; val p2 = prev2; val ty = typed
+            worker.post {
+                val f = (predictor.correction(ty, p, p2)
+                    ?: predictor.typoFix(ty, p, p2))
+                    ?.let { TextContext.matchCase(ty, it) }
+                repeatHandler.post {
+                    applyPendingFix(gen, typedWord, raw, f, p, p2)
+                }
+            }
+        }
+    }
+
+    /** P2: bản sửa nền sau space — chỉ áp khi gen còn khớp, không có từ
+     *  đang gõ mới, và con trỏ vẫn đứng ngay sau "typed + ' '" (user chưa
+     *  gõ/xoá gì). Không đủ điều kiện -> bỏ, không sửa lùi giữa câu. */
+    private fun applyPendingFix(
+        gen: Int, typedWord: String, raw: String,
+        fixed: String?, prev: String, prev2: String
+    ) {
+        val ic = currentInputConnection
+        val tail = if (ic != null) autoFixTail(typedWord) else 0
+        if (gen == fixGen && currentComposingWord.isEmpty() &&
+            fixed != null && tail == typedWord.length + 1
+        ) {
+            ic?.beginBatchEdit()
+            try {
+                ic?.let { icDeleteBack(it, tail) }
+                tailTracker.drop(tail)
+                ic?.let { icCommit(it, "$fixed ") }
+                tailTracker.append("$fixed ")
+            } finally {
+                ic?.endBatchEdit()
+            }
+            lastAutoFix = AutoFix(fixed, typedWord, raw)
+            lastCommittedWord = fixed
+            contextCache = null
+            learn(prev, fixed, prev2)
+            requestSuggestions()
+            return
+        }
+        // Không áp được -> học từ đã chốt thay (giữ hành vi cũ)
+        learn(prev, typedWord, prev2)
     }
 
     private fun handleSpace() {
-        commitComposing()
+        commitComposing(asyncFix = true) // P2: space không chờ sửa
         val ic = currentInputConnection
         val now = android.os.SystemClock.uptimeMillis()
         // 3.x: 2 lần space nhanh sau một từ -> ". " + bật viết hoa đầu câu
@@ -1100,11 +1156,13 @@ class HKeyIME : InputMethodService() {
 
     /** Số ký tự trước con trỏ thuộc về từ vừa bị sửa (kể cả space theo sau);
      *  0 = không đứng ngay sau từ đó -> không hoàn tác được. */
-    private fun autoFixTail(fix: AutoFix): Int {
-        val before = tailNow()?.takeLast(fix.committed.length + 1) ?: return 0
+    private fun autoFixTail(fix: AutoFix) = autoFixTail(fix.committed)
+
+    private fun autoFixTail(committed: String): Int {
+        val before = tailNow()?.takeLast(committed.length + 1) ?: return 0
         return when {
-            before.endsWith(fix.committed + " ") -> fix.committed.length + 1
-            before.endsWith(fix.committed) -> fix.committed.length
+            before.endsWith("$committed ") -> committed.length + 1
+            before.endsWith(committed) -> committed.length
             else -> 0
         }
     }

@@ -154,7 +154,7 @@ object KbLayouts {
     /** Nhóm emoji: (icon tab, danh sách cách nhau bởi space). Tab 0 = gần đây. */
     val EMOJI_TABS = listOf("🕘", "😀", "👋", "🐶", "🍔", "⚽", "❤️")
 
-    private val EMOJI_CATS = listOf(
+    private val EMOJI_CATS_RAW = listOf(
         // 1. Mặt cười
         "😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 ☺️ 😚 😙 😋 😛 😜 " +
             "🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 😌 😔 😪 🤤 😴 😷 🤒 🤕 " +
@@ -165,7 +165,7 @@ object KbLayouts {
         "👋 🤚 🖐️ ✋ 🖖 👌 🤏 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 " +
             "🙌 👐 🤲 🤝 🙏 ✍️ 💅 🤳 💪 🦵 🦶 👂 👃 🧠 👀 👁️ 👅 👄 💋 👶 🧒 👦 👧 🧑 " +
             "👨 👩 🧓 👴 👵 👮 👷 💂 🕵️ 🎅 🤶 👸 🤴 🙇 💁 🙅 🙆 🙋 🤦 🤷 💃 🕺 🚶 🏃 " +
-            "👫 👬 👭 💏 💑 👪",
+            "👫 👬 👭 💏 💑 👪 👨‍👩‍👧‍👦 👩‍💻 👍🏽",
         // 3. Động vật & thiên nhiên
         "🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐔 🐧 🐦 🐤 🦆 🦅 " +
             "🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐜 🐢 🐍 🦎 🐙 🦑 🦐 🦀 🐡 🐠 🐟 🐬 🐳 " +
@@ -190,13 +190,16 @@ object KbLayouts {
             "🔔 🔕 📣 🇻🇳"
     )
 
+    private val EMOJI_CATS: List<List<String>> =
+        EMOJI_CATS_RAW.map { it.split(' ').filter { e -> e.isNotBlank() } }
+
     const val EMOJI_COLS = 8
 
     /** Emoji của một tab (0 = gần đây). Mỗi phần tử là 1 grapheme (có thể
      *  gồm nhiều code point: FE0F, cờ) — không xẻ đôi surrogate. */
     fun emojiList(cat: Int, recent: List<String> = emptyList()): List<String> =
         if (cat <= 0) recent
-        else EMOJI_CATS.getOrNull(cat - 1)?.split(' ')?.filter { it.isNotBlank() } ?: emptyList()
+        else EMOJI_CATS.getOrElse(cat - 1) { emptyList() }
 
     /** Trang emoji: các hàng lưới (cuộn dọc trong KeyboardView) + hàng tab
      *  cố định ở cuối: ABC | 🕘 😀 👋 … | 📋 | ⌫. */
@@ -204,11 +207,19 @@ object KbLayouts {
         val rows = emojiList(cat, recent).chunked(EMOJI_COLS).map { line ->
             KbRow(line.map { KbKey("tx:$it", it) })
         }
-        val tabs = EMOJI_TABS.mapIndexed { i, icon -> KbKey("fn:ecat:$i", icon, func = true) }
-        return rows + KbRow(
-            listOf(KbKey("fn:abc", "ABC", 1.4f, func = true)) + tabs +
-                listOf(KbKey("fn:paste", "📋", func = true), del(1.4f))
+        val tabs = KbRow(
+            EMOJI_TABS.mapIndexed { i, icon -> KbKey("fn:ecat:$i", icon, func = true) }
         )
+        val actions = KbRow(
+            listOf(
+                KbKey("fn:abc", "ABC", 1.3f, func = true),
+                KbKey("fn:paste", func = true),
+                KbKey("fn:space", "HKey", 3.2f, swipe = true),
+                KbKey("fn:enter", "↵", 1.4f, func = true),
+                del(1.5f)
+            )
+        )
+        return rows + tabs + actions
     }
 }
 
@@ -282,7 +293,7 @@ class KeyboardView(context: Context) : View(context) {
 
     private val density = resources.displayMetrics.density
     private val marginH = 2.75f * density
-    private val marginV = 4f * density
+    private val marginV = 3f * density
     private val padV = 4f * density
     /** Đệm chạm dưới đáy rộng hơn padV: chạm trượt xuống mép hàng cuối vẫn
      *  nằm trong view (gán về phím gần nhất) — dưới view là vùng gesture/nav
@@ -466,13 +477,12 @@ class KeyboardView(context: Context) : View(context) {
         if (width == 0) return
         val total = rowsHeight
         if (page == Page.EMOJI) {
-            val tabH = rowH
             gridTop = padV
-            gridBottom = padV + total - tabH
+            gridBottom = padV + total - 2 * rowH
             val gridRowH = rowH * 0.92f
             val es = effSidePx(width.toFloat())
             val unit = (width - 2f * es) / KbLayouts.EMOJI_COLS
-            val gridRows = rows.dropLast(1)
+            val gridRows = rows.dropLast(2)
             gridRows.forEachIndexed { r, row ->
                 val y = gridTop + r * gridRowH
                 row.keys.forEachIndexed { i, k ->
@@ -487,7 +497,8 @@ class KeyboardView(context: Context) : View(context) {
             }
             gridMax = max(0f, gridRows.size * gridRowH - (gridBottom - gridTop))
             gridScroll = gridScroll.coerceIn(0f, gridMax)
-            layoutRow(rows.last(), gridBottom, tabH)
+            layoutRow(rows[rows.size - 2], gridBottom, rowH)
+            layoutRow(rows.last(), gridBottom + rowH, rowH)
         } else {
             gridTop = 0f
             gridBottom = 0f
@@ -505,6 +516,7 @@ class KeyboardView(context: Context) : View(context) {
             if (a.hit.top < padV + marginV) a.hit.top = 0f
             if (a.hit.bottom > height - padBottomV - marginV) a.hit.bottom = height.toFloat()
         }
+        touchHelper.invalidateRoot()
     }
 
     private fun upperCase() = shifted || capsLocked
@@ -530,6 +542,7 @@ class KeyboardView(context: Context) : View(context) {
         for (a in areas) {
             if (a.scroll != inGrid) continue
             if (a.hit.contains(x, gy)) return a
+            if (inGrid) continue
             val dx = maxOf(a.hit.left - x, 0f, x - a.hit.right)
             val dy = maxOf(a.hit.top - gy, 0f, gy - a.hit.bottom)
             val d = dx * dx + dy * dy
@@ -643,11 +656,18 @@ class KeyboardView(context: Context) : View(context) {
             "fn:shift" -> { drawShift(c, a.draw, fg); return }
             "fn:del" -> { drawBackspace(c, a.draw, fg); return }
             "fn:enter" -> { drawEnter(c, a.draw, fg); return }
+            "fn:paste" -> { drawPaste(c, a.draw, fg); return }
             "fn:space" -> {
                 txtPaint.typeface = Typeface.DEFAULT
                 txtPaint.color = palette.dim
-                txtPaint.textSize = 13 * density
                 val label = if (langVi) "HKey · Tiếng Việt" else "HKey · English"
+                val maxW = a.draw.width() - 8 * density
+                var ts = 13 * density
+                txtPaint.textSize = ts
+                while (ts > 8 * density && txtPaint.measureText(label) > maxW) {
+                    ts -= density
+                    txtPaint.textSize = ts
+                }
                 val ty = a.draw.centerY() - (txtPaint.descent() + txtPaint.ascent()) / 2
                 c.drawText(label, a.draw.centerX(), ty, txtPaint)
                 return
@@ -688,6 +708,22 @@ class KeyboardView(context: Context) : View(context) {
             txtPaint.textSize = 9.5f * density
             c.drawText(m, a.draw.right - 8 * density, a.draw.top + 12 * density, txtPaint)
         }
+    }
+
+    private fun drawPaste(c: Canvas, r: RectF, color: Int) {
+        val s = iconSize(r)
+        val cx = r.centerX()
+        val cy = r.centerY()
+        val w = s * 0.72f
+        val h = s * 0.92f
+        val left = cx - w / 2
+        val top = cy - h / 2 + s * 0.05f
+        strokePaint.color = color
+        tmpRect.set(left, top + s * 0.1f, left + w, top + h)
+        c.drawRoundRect(tmpRect, s * 0.08f, s * 0.08f, strokePaint)
+        fillPaint.color = color
+        tmpRect.set(cx - w * 0.26f, top - s * 0.04f, cx + w * 0.26f, top + s * 0.16f)
+        c.drawRoundRect(tmpRect, s * 0.05f, s * 0.05f, fillPaint)
     }
 
     private fun iconSize(r: RectF) = min(r.width(), r.height()) * 0.46f
@@ -928,6 +964,13 @@ class KeyboardView(context: Context) : View(context) {
     private fun pushRecent(e: String) {
         recentEmoji = (listOf(e) + recentEmoji.filter { it != e }).take(32)
         onRecentEmoji(recentEmoji)
+        if (emojiCat == 0) {
+            rows = buildRows()
+            buildAreas()
+            invalidate()
+        } else {
+            touchHelper.invalidateRoot()
+        }
     }
 
     private fun hidePreview() {
@@ -1010,6 +1053,7 @@ class KeyboardView(context: Context) : View(context) {
     override fun computeScroll() {
         if (scroller.computeScrollOffset()) {
             gridScroll = scroller.currY.toFloat().coerceIn(0f, gridMax)
+            touchHelper.invalidateRoot()
             postInvalidateOnAnimation()
         }
     }
@@ -1036,6 +1080,14 @@ class KeyboardView(context: Context) : View(context) {
                 val a = areaAt(x, y) ?: return true
                 val k = a.key
                 hideAlts()
+                if (e.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
+                    val flushed = touch.flushPendingCharacters(excludePid = pid)
+                    if (flushed.isNotEmpty()) {
+                        handler.removeCallbacks(longPress)
+                        hidePreview()
+                        for (fk in flushed) feed(fk)
+                    }
+                }
                 // Repeat: bắn ngay + consumed luôn (nhả không bắn lại — sửa
                 // xoá đúp) + nạp lịch lặp.
                 if (touch.down(pid, k, x, e.eventTime)) {
@@ -1085,6 +1137,7 @@ class KeyboardView(context: Context) : View(context) {
                             val ns = (gridScrollOrigin - (y - base)).coerceIn(0f, gridMax)
                             if (ns != gridScroll) {
                                 gridScroll = ns
+                                touchHelper.invalidateRoot()
                                 invalidate()
                             }
                         }
@@ -1226,7 +1279,15 @@ class KeyboardView(context: Context) : View(context) {
         }
 
         override fun getVisibleVirtualViews(ids: MutableList<Int>) {
-            for (i in areas.indices) ids += i
+            for (i in areas.indices) {
+                val a = areas[i]
+                if (a.scroll) {
+                    val vt = a.hit.top - gridScroll
+                    val vb = a.hit.bottom - gridScroll
+                    if (vb <= gridTop || vt >= gridBottom) continue
+                }
+                ids += i
+            }
         }
 
         override fun onPopulateNodeForVirtualView(
@@ -1239,10 +1300,16 @@ class KeyboardView(context: Context) : View(context) {
                 return
             }
             val off = if (a.scroll) gridScroll else 0f
+            var t = a.hit.top - off
+            var btm = a.hit.bottom - off
+            if (a.scroll) {
+                t = t.coerceAtLeast(gridTop)
+                btm = btm.coerceAtMost(gridBottom)
+            }
             node.setBoundsInParent(
                 android.graphics.Rect(
-                    a.hit.left.toInt(), (a.hit.top - off).toInt(),
-                    a.hit.right.toInt(), (a.hit.bottom - off).toInt()
+                    a.hit.left.toInt(), t.toInt(),
+                    a.hit.right.toInt(), btm.toInt()
                 )
             )
             node.contentDescription = spoken[a.key.tag] ?: labelOf(a.key)

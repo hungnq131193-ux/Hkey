@@ -121,7 +121,7 @@ class HKeyIME : InputMethodService() {
     // worker cùng index; đọc trên main thread qua EngineOptions.commonWord.
     // 1.5.3: kèm tần suất để phân giải vần mơ hồ (uo -> uô/ươ).
     @Volatile private var commonFreqs: Map<String, Int> = emptyMap()
-    private var suggestGen = 0 // số hiệu request gợi ý — kết quả cũ bị bỏ
+    @Volatile private var suggestGen = 0 // số hiệu request gợi ý — kết quả cũ bị bỏ
 
     private val prefs get() = getSharedPreferences(SettingsKeys.PREFS, Context.MODE_PRIVATE)
     // 1.4.0 (S2): đổi cài đặt áp ngay không cần restart — giữ field chống GC,
@@ -182,6 +182,8 @@ class HKeyIME : InputMethodService() {
 
     override fun onDestroy() {
         destroyed = true
+        suggestGen++
+        applyCandidates(CandidateSet("", "", ""))
         prefs.unregisterOnSharedPreferenceChangeListener(prefListener) // S2
         kbView?.release() // dọn repeat/popup của view
         repeatHandler.removeCallbacks(saveLearned)
@@ -884,14 +886,14 @@ class HKeyIME : InputMethodService() {
         if (selStart >= 0 && selEnd >= 0 && selStart != selEnd) {
             step = 0 // đang bôi chọn: vuốt chỉ thu vùng chọn về một đầu
         } else if (dir > 0) {
-            val after = ic.getTextAfterCursor(2, 0) ?: return
+            val after = ic.getTextAfterCursor(256, 0) ?: return
             if (after.isEmpty()) return // đã ở cuối ô
-            step = if (after.length >= 2 && Character.isHighSurrogate(after[0])) 2 else 1
+            step = firstGraphemeLength(after.toString())
         } else {
             if (pos <= 0) return // đã ở đầu ô
-            val before = ic.getTextBeforeCursor(2, 0) ?: return
+            val before = ic.getTextBeforeCursor(256, 0) ?: return
             if (before.isEmpty()) return
-            step = if (before.length >= 2 && Character.isLowSurrogate(before[before.length - 1])) -2 else -1
+            step = -lastGraphemeLength(before.toString())
         }
         val np = (pos + step).coerceAtLeast(0)
         ic.setSelection(np, np)
@@ -1363,11 +1365,16 @@ class HKeyIME : InputMethodService() {
         tailTracker.drop(n)
     }
 
+    private var graphemeIt: android.icu.text.BreakIterator? = null
+
+    private fun graphemeIter(): android.icu.text.BreakIterator = graphemeIt
+        ?: android.icu.text.BreakIterator.getCharacterInstance().also { graphemeIt = it }
+
     /** Số UTF-16 unit của grapheme cuối (emoji + FE0F, cờ, chữ + dấu tổ hợp). */
     private fun lastGraphemeLength(t: String?): Int {
         if (t.isNullOrEmpty()) return 1
         return try {
-            val bi = android.icu.text.BreakIterator.getCharacterInstance()
+            val bi = graphemeIter()
             bi.setText(t)
             val start = bi.preceding(t.length)
             if (start == android.icu.text.BreakIterator.DONE) 1
@@ -1375,6 +1382,22 @@ class HKeyIME : InputMethodService() {
         } catch (e: Exception) {
             if (t.length >= 2 && Character.isLowSurrogate(t.last()) &&
                 Character.isHighSurrogate(t[t.length - 2])
+            ) 2 else 1
+        }
+    }
+
+    private fun firstGraphemeLength(t: String): Int {
+        if (t.isEmpty()) return 0
+        return try {
+            val bi = graphemeIter()
+            bi.setText(t)
+            bi.first()
+            val end = bi.next()
+            if (end == android.icu.text.BreakIterator.DONE) t.length
+            else end.coerceIn(1, t.length)
+        } catch (e: Exception) {
+            if (t.length >= 2 && Character.isHighSurrogate(t[0]) &&
+                Character.isLowSurrogate(t[1])
             ) 2 else 1
         }
     }
@@ -1499,11 +1522,12 @@ class HKeyIME : InputMethodService() {
 
     /** Đang hiện phương án hoàn tác auto-fix thì chạm candidate = hoàn tác. */
     private fun onCandidateTap(tv: TextView?) {
+        if (tv == null) return
         val fix = lastAutoFix
-        if (fix != null && tv === candidate2 && tv?.text == fix.typed) {
+        if (fix != null && tv === candidate2 && tv.text == fix.typed) {
             revertCommittedFix()
         } else {
-            acceptSuggestion(tv?.text.toString())
+            acceptSuggestion(tv.text.toString())
         }
     }
 
@@ -1538,6 +1562,8 @@ class HKeyIME : InputMethodService() {
     /** 6e: gom updateSuggestions về một lần mỗi frame khi gõ nhanh — nhiều
      *  phím trong cùng frame chỉ tính gợi ý 1 lần. */
     private fun requestSuggestions() {
+        suggestGen++
+        showPendingCandidates()
         val v = kbView
         if (v == null) {
             updateSuggestions()
@@ -1548,6 +1574,23 @@ class HKeyIME : InputMethodService() {
         v.postOnAnimation {
             suggPending = false
             updateSuggestions()
+        }
+    }
+
+    private fun showPendingCandidates() {
+        if (rawMode || noSuggest || !optSuggestions || !vietMode) {
+            applyCandidates(CandidateSet("", "", ""))
+            return
+        }
+        if (currentComposingWord.isNotEmpty()) {
+            applyCandidates(CandidateSet("", currentDisplay, ""))
+            return
+        }
+        val fix = lastAutoFix
+        if (fix != null && autoFixTail(fix) > 0) {
+            applyCandidates(CandidateSet("", fix.typed, ""))
+        } else {
+            applyCandidates(CandidateSet("", "", ""))
         }
     }
 
@@ -1635,7 +1678,14 @@ class HKeyIME : InputMethodService() {
         worker.post(task)
         return try {
             task.get(30, java.util.concurrent.TimeUnit.MILLISECONDS)
-        } catch (e: Exception) {
+        } catch (e: java.util.concurrent.TimeoutException) {
+            task.cancel(false)
+            null
+        } catch (e: InterruptedException) {
+            task.cancel(false)
+            Thread.currentThread().interrupt()
+            null
+        } catch (e: java.util.concurrent.ExecutionException) {
             null
         }
     }
@@ -1674,10 +1724,13 @@ class HKeyIME : InputMethodService() {
             val req = SuggestRequest(
                 ++suggestGen, current, restore, ctx, ctx2, tokenGlued, raw, engine
             )
-            worker.post {
+            worker.postLatest(Runnable {
+                if (req.gen != suggestGen || destroyed) return@Runnable
                 val c = computeCandidates(req)
-                repeatHandler.post { if (req.gen == suggestGen) applyCandidates(c) }
-            }
+                repeatHandler.post {
+                    if (req.gen == suggestGen && !destroyed) applyCandidates(c)
+                }
+            })
         } else {
             // Từ vừa bị auto-correct: ô giữa hiện đúng từ user đã gõ,
             // chạm vào để khôi phục (hoặc bấm ⌫).
@@ -1697,16 +1750,17 @@ class HKeyIME : InputMethodService() {
             // shift đang bật (đầu câu) thì hiện hoa luôn (1.2)
             val gen = ++suggestGen
             val up = shiftOn
-            worker.post {
+            worker.postLatest(Runnable {
+                if (gen != suggestGen || destroyed) return@Runnable
                 val next = predictor.predictNext(ctx, ctx2)
                 repeatHandler.post {
-                    if (gen != suggestGen) return@post
+                    if (gen != suggestGen || destroyed) return@post
                     val l = next.map { if (up) it.replaceFirstChar(Char::uppercase) else it }
                     applyCandidates(
                         CandidateSet(l.getOrNull(1) ?: "", l.getOrNull(0) ?: "", l.getOrNull(2) ?: "")
                     )
                 }
-            }
+            })
         }
     }
 

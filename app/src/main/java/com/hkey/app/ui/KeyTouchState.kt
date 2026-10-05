@@ -10,7 +10,7 @@ class KeyTouchState(
 ) {
     class Ptr(var key: KbKey, val startX: Float, var swipeAcc: Float = 0f, var swiping: Boolean = false)
 
-    val ptrs = HashMap<Int, Ptr>()
+    val ptrs = LinkedHashMap<Int, Ptr>()
     val consumed = HashSet<Int>()
 
     var repeatKey: KbKey? = null
@@ -59,6 +59,19 @@ class KeyTouchState(
         val fire = if (p != null && pid !in consumed) p.key else null
         consumed -= pid
         return Up(p?.key, fire, stop)
+    }
+
+    fun flushPendingCharacters(excludePid: Int = -1): List<KbKey> {
+        val out = mutableListOf<KbKey>()
+        for ((pid, p) in ptrs) {
+            if (pid == excludePid || pid in consumed) continue
+            val k = p.key
+            if (k.tag.startsWith("ch:") || k.tag.startsWith("p:")) {
+                out += k
+                consumed += pid
+            }
+        }
+        return out
     }
 
     fun cancelAll() {

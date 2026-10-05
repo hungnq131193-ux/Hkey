@@ -12,7 +12,37 @@ class SuggestWorker(
     private val quitter: () -> Unit
 ) {
     fun post(r: Runnable) = poster(r)
-    fun quitSafely() = quitter()
+
+    private val latestLock = Any()
+    private var latest: Runnable? = null
+    private var drainQueued = false
+    private var stopped = false
+
+    fun postLatest(r: Runnable) {
+        synchronized(latestLock) {
+            if (stopped) return
+            latest = r
+            if (drainQueued) return
+            drainQueued = true
+        }
+        poster(Runnable {
+            val task = synchronized(latestLock) {
+                drainQueued = false
+                val t = latest
+                latest = null
+                t
+            }
+            task?.run()
+        })
+    }
+
+    fun quitSafely() {
+        synchronized(latestLock) {
+            latest = null
+            stopped = true
+        }
+        quitter()
+    }
 
     companion object {
         fun handlerThread(name: String = "hkey-suggest"): SuggestWorker {

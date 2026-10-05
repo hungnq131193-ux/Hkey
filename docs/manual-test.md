@@ -70,6 +70,25 @@ Chạy sau mỗi giai đoạn, trước khi chuyển giai đoạn tiếp theo.
 - Gõ một từ lạ vài lần → khởi động lại máy → gợi ý vẫn nhớ (lưu bền).
 - MainActivity → "Xóa dữ liệu học" → gợi ý từ lạ mất hẳn.
 
+## Kiểm tra riêng bản 1.5.8
+- **Gõ lăn hai ngón:** giữ ngón 1 trên `a`, ngón 2 chạm `b`, nhả b rồi
+  nhả a → ô nhập ra đúng `ab` (không `ba`); 3 ngón `a` `s` `d` tương tự.
+- **Thanh gợi ý:** gõ nhanh liên tục một cụm từ — các ô gợi ý không hiện
+  lại gợi ý của phím trước; ngay khi gõ chữ mới, 2 ô bên trống trong tích
+  tắc rồi hiện gợi ý mới; ô giữa luôn là chữ đang gõ.
+- **Chạm ứng viên 2 lần:** gõ `v`, chạm ô gợi ý bên, chạm tiếp lần nữa
+  → từ chỉ được chèn một lần.
+- **Vuốt space qua emoji:** nhập `a👨‍👩‍👧‍👦b`, đặt con trỏ trước cụm emoji
+  rồi vuốt space phải/trái → con trỏ nhảy qua/trước trọn cụm, không dừng
+  giữa chừng; ⌫ xoá trọn cụm một lần.
+- **Trang emoji:** mở emoji → 7 tab nhóm một hàng riêng, ABC/dán/space/
+  enter/⌫ một hàng riêng ở cuối; cuộn lưới mượt; chạm vùng trống sau ô
+  emoji cuối hàng không chọn gì; chọn emoji xong vẫn về trang chữ.
+- **Ngoại hình:** theme mặc định Tối giờ navy + teal; Sáng nền nhạt
+  #F4F8F8; các theme cũ (AMOLED, Đại dương, Sakura...) giữ nguyên; nhãn
+  trên phím cách không bị cắt ở màn hình hẹp; phím Enter vẫn đổi icon
+  theo ô (gửi/tìm/xuống dòng).
+
 ## Cảm nhận tốc độ
 - Gõ nhanh liên tục 30 giây; so với bản cũ.
 - Bàn phím hiện nhanh, không khựng sau khi chốt từ.

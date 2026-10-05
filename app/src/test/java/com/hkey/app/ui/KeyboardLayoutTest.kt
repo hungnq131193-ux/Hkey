@@ -107,12 +107,12 @@ class KeyboardLayoutTest {
         }
         // tab gần đây rỗng -> chỉ còn hàng tab, không crash
         val empty = KbLayouts.emoji(0, emptyList())
-        assertEquals(1, empty.size)
-        assertTrue(empty.last().keys.any { it.tag == "fn:ecat:0" })
+        assertEquals(2, empty.size)
+        assertTrue(empty[0].keys.any { it.tag == "fn:ecat:0" })
         assertTrue(empty.last().keys.any { it.tag == "fn:del" })
         // gần đây có dữ liệu
         val rec = KbLayouts.emoji(0, listOf("😀", "❤️"))
-        assertEquals(2, rec.size)
+        assertEquals(3, rec.size)
         assertEquals("tx:❤️", rec[0].keys[1].tag)
     }
 

@@ -102,6 +102,112 @@ class SuggestWorkerTest {
     }
 
     @Test
+    fun newKeyClearsOldSideCandidates() {
+        val qp = QueuePoster()
+        HKeyIME.workerPosterOverride = qp.post
+        val h = ImeHarness()
+        qp.pump()
+        h.idle()
+
+        h.type("v")
+        updateSug(h.ime)
+        qp.pump()
+        h.idle()
+        val oldSide = cand(h.ime, "candidate1")
+
+        h.type("i")
+        assertEquals("ô bên trái phải trống ngay", "", cand(h.ime, "candidate1"))
+        assertEquals("ô bên phải phải trống ngay", "", cand(h.ime, "candidate3"))
+        assertEquals("ô giữa = chữ đang hiển thị", "vi", cand(h.ime, "candidate2"))
+        if (oldSide.isNotEmpty()) {
+            assertTrue(oldSide != cand(h.ime, "candidate1"))
+        }
+    }
+
+    @Test
+    fun delayedMainApplyAfterDestroyDoesNotRepopulate() {
+        val qp = QueuePoster()
+        HKeyIME.workerPosterOverride = qp.post
+        val h = ImeHarness()
+        qp.pump()
+        h.idle()
+
+        h.type("v")
+        updateSug(h.ime)
+        qp.pump()
+        h.ime.onDestroy()
+        h.idle()
+        assertTrue("apply sau destroy không được hiện gợi ý lại",
+            cand(h.ime, "candidate2") != "v" && cand(h.ime, "candidate1").isEmpty()
+                && cand(h.ime, "candidate3").isEmpty())
+    }
+
+    @Test
+    fun queuedApplyOfOldGenerationDiscardedOnNewKey() {
+        val qp = QueuePoster()
+        HKeyIME.workerPosterOverride = qp.post
+        val h = ImeHarness()
+        qp.pump()
+        h.idle()
+
+        h.type("v")
+        updateSug(h.ime)
+        qp.pump()
+        h.type("i")
+        h.idle()
+        assertTrue("không được áp kết quả của gen cũ",
+            cand(h.ime, "candidate2") != "v")
+    }
+
+    private fun tap(ime: HKeyIME, name: String) {
+        val tv = HKeyIME::class.java.getDeclaredField(name)
+            .apply { isAccessible = true }.get(ime) as? TextView
+        HKeyIME::class.java.getDeclaredMethod("onCandidateTap", TextView::class.java)
+            .apply { isAccessible = true }.invoke(ime, tv)
+    }
+
+    @Test
+    fun doubleTapCandidateDoesNotRepeat() {
+        val qp = QueuePoster()
+        HKeyIME.workerPosterOverride = qp.post
+        val h = ImeHarness()
+        qp.pump()
+        h.idle()
+
+        h.type("v")
+        updateSug(h.ime)
+        qp.pump()
+        h.idle()
+        val side = cand(h.ime, "candidate1")
+        assertTrue("cần có gợi ý bên để test", side.isNotEmpty())
+
+        tap(h.ime, "candidate1")
+        h.idle()
+        val afterFirst = h.text()
+        tap(h.ime, "candidate1")
+        h.idle()
+        qp.pump()
+        h.idle()
+        assertEquals(afterFirst, h.text())
+        assertEquals(1, Regex(Regex.escape(side.trim()) + " ").findAll(h.text()).count())
+    }
+
+    @Test
+    fun candidateTapNullIsSafe() {
+        val qp = QueuePoster()
+        HKeyIME.workerPosterOverride = qp.post
+        val h = ImeHarness()
+        qp.pump()
+        h.idle()
+        val before = h.text()
+        HKeyIME::class.java.getDeclaredMethod("onCandidateTap", TextView::class.java)
+            .apply { isAccessible = true }.invoke(h.ime, null as TextView?)
+        h.idle()
+        assertEquals(before, h.text())
+        assertTrue(!h.text().contains("null"))
+    }
+
+    @Test
     fun computeCandidatesDeterministic() {
         val qp = QueuePoster()
         HKeyIME.workerPosterOverride = qp.post

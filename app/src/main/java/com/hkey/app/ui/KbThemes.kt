@@ -25,22 +25,22 @@ class KbPalette(
 
     companion object {
         val DARK = KbPalette(
-            key = 0xFF33363C.toInt(), keyPressed = 0xFF4B4F57.toInt(),
-            func = 0xFF26292E.toInt(), funcPressed = 0xFF3D4148.toInt(),
-            text = 0xFFF1F3F4.toInt(), dim = 0xFF9AA0A6.toInt(),
-            accent = 0xFF8AB4F8.toInt(), popupBg = 0xFF44484F.toInt(),
-            bg = 0xFF1A1C20.toInt(), bar = 0xFF1A1C20.toInt(), divider = 0xFF33363C.toInt(),
-            shadow = 0xFF0E0F12.toInt(), enter = 0xFF4C8DF6.toInt(),
-            enterPressed = 0xFF3A73D1.toInt(), onAccent = 0xFFFFFFFF.toInt()
+            key = 0xFF24383F.toInt(), keyPressed = 0xFF35515C.toInt(),
+            func = 0xFF172A31.toInt(), funcPressed = 0xFF27424C.toInt(),
+            text = 0xFFF0F7F8.toInt(), dim = 0xFFA6BFC5.toInt(),
+            accent = 0xFF70DBCE.toInt(), popupBg = 0xFF2C454E.toInt(),
+            bg = 0xFF0C191E.toInt(), bar = 0xFF0C191E.toInt(), divider = 0xFF1D3037.toInt(),
+            shadow = 0xFF060F13.toInt(), enter = 0xFF007F79.toInt(),
+            enterPressed = 0xFF00665F.toInt(), onAccent = 0xFFFFFFFF.toInt()
         )
         val LIGHT = KbPalette(
-            key = 0xFFFFFFFF.toInt(), keyPressed = 0xFFDADCE0.toInt(),
-            func = 0xFFD3D7DC.toInt(), funcPressed = 0xFFB9BEC5.toInt(),
-            text = 0xFF202124.toInt(), dim = 0xFF5F6368.toInt(),
-            accent = 0xFF1A73E8.toInt(), popupBg = 0xFFFFFFFF.toInt(),
-            bg = 0xFFECEEF1.toInt(), bar = 0xFFECEEF1.toInt(), divider = 0xFFD3D7DC.toInt(),
-            shadow = 0xFFB4B9C0.toInt(), enter = 0xFF1A73E8.toInt(),
-            enterPressed = 0xFF1559B8.toInt(), onAccent = 0xFFFFFFFF.toInt(),
+            key = 0xFFFFFFFF.toInt(), keyPressed = 0xFFDCE9E8.toInt(),
+            func = 0xFFDDE8E8.toInt(), funcPressed = 0xFFC3D5D4.toInt(),
+            text = 0xFF14262C.toInt(), dim = 0xFF5A7680.toInt(),
+            accent = 0xFF007F79.toInt(), popupBg = 0xFFFFFFFF.toInt(),
+            bg = 0xFFF4F8F8.toInt(), bar = 0xFFF4F8F8.toInt(), divider = 0xFFD5E2E2.toInt(),
+            shadow = 0xFFB9C9C9.toInt(), enter = 0xFF007F79.toInt(),
+            enterPressed = 0xFF00665F.toInt(), onAccent = 0xFFFFFFFF.toInt(),
             light = true
         )
     }

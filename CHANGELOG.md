@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.5.8 (versionCode 34)
+
+- Gợi ý nhanh và sạch hơn khi gõ nhanh: chỉ tính bản MỚI NHẤT thay vì chạy
+  hết mọi request cũ; gõ phím mới xoá ngay gợi ý của từ trước khỏi thanh
+  ứng viên (không còn chạm nhầm vào gợi ý đã cũ), và kết quả tính xong
+  muộn không còn đè lên chữ đang gõ. Chạm lần hai vào ô đã chọn không
+  chèn lặp lại.
+- Gõ lăn hai ngón đúng thứ tự: ngón thứ hai chạm xuống thì phím ngón
+  trước đang giữ được chốt ngay — gõ nhanh hai tay không còn ra ngược
+  thứ tự (a rồi b không thành "ba").
+- Vuốt space dời con trỏ theo cụm ký tự đầy đủ: gia đình emoji
+  (👨‍👩‍👧‍👦), emoji có màu da, cờ quốc gia và chữ có dấu tổ hợp không còn
+  bị xẻ nửa khi dời con trỏ hay xoá ⌫.
+- Giao diện mặc định mới theo màu thương hiệu HKey (navy đậm + teal;
+  bản sáng nền #F4F8F8), khe giữa các phím gọn hơn, icon dán vẽ thành
+  clipboard thay vì ký tự 📋, nhãn trên phím cách tự co lại để không
+  bị cắt ở màn hình hẹp.
+- Trang emoji thoáng hơn: hàng chọn nhóm (7 tab) và hàng tác vụ
+  (ABC, dán, space, enter, ⌫) tách thành 2 hàng riêng, dễ bấm hơn;
+  chạm vào chỗ trống trong lưới không còn chọn nhầm emoji. TalkBack
+  chỉ đọc các emoji đang thật sự hiển thị trên màn hình.
+
 ## 1.5.7 (versionCode 33)
 
 - Sửa lỗi tự sửa oan từ tiếng Anh đúng ("key" -> "kye"): bản sửa tự động

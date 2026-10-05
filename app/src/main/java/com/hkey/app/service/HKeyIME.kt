@@ -191,10 +191,31 @@ class HKeyIME : InputMethodService() {
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
-        finalizeWord(currentInputConnection) // 1.4.0: chốt từ đang gõ dở
+        finalizeGuarded(currentInputConnection) // 1.4.0: chốt từ đang gõ dở
         kbView?.release() // 1.10: ẩn phím -> dừng nhấn giữ ⌫, đóng popup
         persistLearned() // mất focus -> ghi luôn nếu bẩn
         super.onFinishInputView(finishingInput)
+    }
+
+    private fun finalizeGuarded(ic: android.view.inputmethod.InputConnection?) {
+        if (currentComposingWord.isEmpty() || ic == null) {
+            finalizeWord(ic)
+            return
+        }
+        val et = ic.getExtractedText(
+            android.view.inputmethod.ExtractedTextRequest(), 0
+        )
+        val t = et?.text
+        val end = selEnd - (et?.startOffset ?: 0)
+        val start = end - shownComposingLen
+        if (t != null && shownComposingLen > 0 && start >= 0 && end <= t.length &&
+            t.regionMatches(start, currentDisplay, 0, shownComposingLen)
+        ) {
+            finalizeWord(ic)
+        } else {
+            discardComposing()
+            tailTracker.invalidate()
+        }
     }
 
     // -------------------------------------------------- H1: phím cứng
@@ -268,7 +289,7 @@ class HKeyIME : InputMethodService() {
 
     override fun onFinishInput() {
         // 1.4.0: đổi ô nhập khi đang gõ dở -> chốt từ tại chỗ cũ trước
-        if (currentComposingWord.isNotEmpty()) finalizeWord(currentInputConnection)
+        if (currentComposingWord.isNotEmpty()) finalizeGuarded(currentInputConnection)
         super.onFinishInput()
     }
 
@@ -385,10 +406,27 @@ class HKeyIME : InputMethodService() {
             info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
         currentInputType = info.inputType
         currentImeOptions = info.imeOptions
+        var resumeLen = 0
+        if (restarting && currentComposingWord.isNotEmpty()) {
+            val display = currentDisplay
+            val before = if (display.isEmpty()) null else
+                currentInputConnection?.getTextBeforeCursor(display.length, 0)
+            if (info.initialSelStart == selEnd && info.initialSelEnd == selEnd &&
+                before?.endsWith(display) == true
+            ) {
+                resumeLen = display.length
+            } else {
+                discardComposing()
+                tailTracker.invalidate()
+            }
+        } else if (!restarting) {
+            discardComposing()
+            tailTracker.invalidate()
+        }
         selStart = info.initialSelStart
         selEnd = info.initialSelEnd
         expectedSels.clear()
-        shownComposingLen = 0
+        shownComposingLen = resumeLen
         currentField = fieldOf(info.inputType)
         computeAutoCap(info)
         consumeLearningCleared() // tiêu thụ sớm ngay khi focus ô, không chờ view
@@ -608,6 +646,21 @@ class HKeyIME : InputMethodService() {
         shownComposingLen = 0
     }
 
+    private fun discardComposing() {
+        currentComposingWord.clear()
+        lastCommittedWord = ""
+        lastCommitWasRaw = false
+        lastAutoFix = null
+        tokenGlued = false
+        contextCache = null
+        tailTracker.invalidate()
+        shownComposingLen = 0
+        currentDisplay = ""
+        fixGen++
+        suggestGen++
+        applyCandidates(CandidateSet("", "", ""))
+    }
+
     /** Con trỏ bị đổi chỗ (chạm chỗ khác/bôi chọn): chốt từ đang gõ, xoá buffer
      *  để phím xoá và ký tự tiếp theo tác động đúng vị trí mới. */
     override fun onUpdateSelection(
@@ -628,13 +681,24 @@ class HKeyIME : InputMethodService() {
         // cuối vùng composing) -> ngữ cảnh trước từ không đổi, giữ cache.
         val selfEdit = expected || (currentComposingWord.isNotEmpty() &&
             newSelStart == newSelEnd && candidatesStart >= 0 && newSelStart == candidatesEnd)
-        if (currentComposingWord.isNotEmpty() && !selfEdit) {
-            finalizeWord(currentInputConnection) // 1.4.0: chốt từ tại chỗ cũ, không sửa
-            requestSuggestions()
+        if (currentComposingWord.isNotEmpty()) {
+            val d = currentDisplay
+            val textMismatch = candidatesStart < 0 && d.isNotEmpty() &&
+                currentInputConnection?.getTextBeforeCursor(d.length, 0)
+                    ?.endsWith(d) == false
+            if (!selfEdit || textMismatch) {
+                if (candidatesStart < 0) {
+                    discardComposing()
+                } else {
+                    finalizeWord(currentInputConnection) // 1.4.0: chốt từ tại chỗ cũ, không sửa
+                    requestSuggestions()
+                }
+            }
         }
         if (!selfEdit) { // con trỏ/ngữ cảnh đổi thật mới vô hiệu cả tail-cache
             contextCache = null
             tailTracker.invalidate()
+            fixGen++
             expectedSels.clear()
             shownComposingLen = 0
             clearStaleCandidates() // 1.5.1: ngữ cảnh đổi -> xoá ứng viên cũ ngay

@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.5.6 (versionCode 32)
+
+- Sửa lỗi nghiêm trọng: khi app xoá/trộn lại toàn bộ nội dung ô nhập
+  (ví dụ ô chat sau khi gửi tin) trong lúc đang gõ dở, HKey không còn
+  tự ghi lại từ đang gõ (kể cả gõ tắt đã bung) vào ô đã xoá — trước đây
+  chữ cũ "hồi sinh" rồi dính vào nội dung mới.
+- Ô nhập bị đổi nội dung không báo trước (không còn vùng đang gõ) giờ
+  được nhận diện ngay: buffer gõ dở, gợi ý và bản tự sửa đang chờ đều
+  bị huỷ, phím kế tiếp chỉ in đúng chữ mới.
+- Khi ô nhập mở lại (restarting), HKey chỉ giữ từ đang gõ dở nếu nội
+  dung thật trong ô vẫn còn nguyên ở đúng vị trí — tránh trường hợp
+  phím thô cũ xuất hiện lại sau khi app đã xoá sạch.
+- Sửa lỗi "dd" đã được học/thêm vào từ phổ biến thì gõ "dd" không ra
+  "đ" — luật Telex cơ bản dd→đ luôn được ưu tiên, kể cả chữ hoa
+  (Dd/DD→Đ); từ tiếng Anh đã học chứa "dd" như "add" vẫn giữ nguyên.
+- Tính năng mới: mục **Cập nhật** trong app HKey tự kiểm tra bản mới
+  trên GitHub Releases, cho phép tải và cài đặt ngay trong app. Đây là
+  tính năng duy nhất dùng mạng — việc gõ phím vẫn hoàn toàn offline.
+
 ## 1.5.5 (versionCode 31)
 
 - Sửa lỗi giao diện Cài đặt không cập nhật khi đổi tuỳ chọn: trạng

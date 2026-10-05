@@ -11,7 +11,7 @@ HKey là bàn phím tiếng Việt mã nguồn mở nhẹ, bảo mật và thôn
 - **Càng gõ càng thông minh (Dynamic Learning):** Tự động ghi nhớ từ và cụm từ cá nhân bạn hay dùng để tối ưu danh sách gợi ý. Dữ liệu học được lưu bền trên máy và có giới hạn dung lượng.
 
 ## Quyền riêng tư
-- **Không gửi dữ liệu đi đâu:** HKey hoạt động hoàn toàn offline; dữ liệu học chỉ lưu trong bộ nhớ riêng của app trên máy bạn.
+- **Không gửi dữ liệu đi đâu:** Gõ phím hoạt động hoàn toàn offline; dữ liệu học chỉ lưu trong bộ nhớ riêng của app trên máy bạn. Chỉ tính năng **Cập nhật** trong app cài đặt mới dùng mạng — tải APK bản mới từ GitHub Releases — không gửi nội dung gõ hoặc dữ liệu học.
 - **Tự tắt trong ô nhạy cảm:** Telex, gợi ý, tự sửa và tự học đều tắt hoàn toàn trong ô mật khẩu, email, URL và các ô không cho phép gợi ý — ký tự gõ được giữ nguyên.
 - **Không sao lưu lên cloud:** `allowBackup=false` nên dữ liệu học không bị backup tự động.
 - **Xoá dữ liệu học:** Mở app HKey → mục "Quyền riêng tư" → nút **Xóa dữ liệu học**.

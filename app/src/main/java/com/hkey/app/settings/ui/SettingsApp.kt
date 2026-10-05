@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
@@ -75,12 +76,14 @@ import com.hkey.app.settings.ui.sections.InterfaceScreen
 import com.hkey.app.settings.ui.sections.MacroScreen
 import com.hkey.app.settings.ui.sections.MethodScreen
 import com.hkey.app.settings.ui.sections.SmartScreen
+import com.hkey.app.settings.ui.sections.UpdatePrompt
+import com.hkey.app.settings.ui.sections.UpdateScreen
 import com.hkey.app.ui.KbThemes
 
 /** 1.4.0 (U2/U3): điều hướng bằng state (không Navigation-Compose) —
  *  rememberSaveable giữ màn khi xoay máy, BackHandler về Home.
  *  1.5.0: AnimatedContent fade+slide nhẹ 200ms khi đổi màn. */
-enum class Screen { HOME, METHOD, SMART, UI, FEEDBACK, HW, MACRO, DATA, ABOUT }
+enum class Screen { HOME, METHOD, SMART, UI, FEEDBACK, HW, MACRO, DATA, UPDATE, ABOUT }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,6 +91,9 @@ fun SettingsApp(vm: SettingsViewModel) {
     var screen by rememberSaveable { mutableStateOf(Screen.HOME.name) }
     val cur = Screen.valueOf(screen)
     BackHandler(enabled = cur != Screen.HOME) { screen = Screen.HOME.name }
+    val updateVm: com.hkey.app.update.UpdateViewModel =
+        androidx.lifecycle.viewmodel.compose.viewModel()
+    UpdatePrompt(updateVm) { screen = Screen.UPDATE.name }
 
     val title = when (cur) {
         Screen.HOME -> stringResource(R.string.app_name)
@@ -98,6 +104,7 @@ fun SettingsApp(vm: SettingsViewModel) {
         Screen.HW -> stringResource(R.string.st_sec_hw)
         Screen.MACRO -> stringResource(R.string.st_sec_macro)
         Screen.DATA -> stringResource(R.string.st_sec_data)
+        Screen.UPDATE -> stringResource(R.string.st_sec_update)
         Screen.ABOUT -> stringResource(R.string.st_sec_about)
     }
 
@@ -158,6 +165,7 @@ fun SettingsApp(vm: SettingsViewModel) {
                     Screen.HW -> HwScreen(vm)
                     Screen.MACRO -> MacroScreen(vm)
                     Screen.DATA -> DataScreen(vm)
+                    Screen.UPDATE -> UpdateScreen(updateVm)
                     Screen.ABOUT -> AboutScreen()
                 }
             }
@@ -333,6 +341,12 @@ private fun HomeScreen(vm: SettingsViewModel, go: (Screen) -> Unit) {
                     stringResource(R.string.st_sec_data), "Sao lưu · khôi phục · xoá học",
                     Icons.Filled.Lock
                 ) { go(Screen.DATA) }
+                NavDivider()
+                NavRow(
+                    stringResource(R.string.st_sec_update),
+                    "Bản mới từ GitHub",
+                    Icons.Filled.Refresh
+                ) { go(Screen.UPDATE) }
                 NavDivider()
                 NavRow(
                     stringResource(R.string.st_sec_about),

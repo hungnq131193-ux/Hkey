@@ -121,7 +121,7 @@ fun DataScreen(vm: SettingsViewModel) {
             ) { askReset = true }
         }
         Text(
-            "HKey chạy hoàn toàn offline — dữ liệu học chỉ nằm trên máy này.",
+            "Gõ phím hoàn toàn offline — dữ liệu học chỉ nằm trên máy này; chỉ tính năng cập nhật ứng dụng mới dùng mạng (GitHub).",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp)

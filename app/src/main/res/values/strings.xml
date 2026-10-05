@@ -21,6 +21,8 @@
     <string name="st_sec_macro">Gõ tắt</string>
     <string name="st_sec_data">Dữ liệu &amp; riêng tư</string>
     <string name="st_sec_about">Giới thiệu</string>
+    <string name="st_sec_update">Cập nhật</string>
+    <string name="st_check_update">Kiểm tra cập nhật</string>
     <string name="st_back">Quay lại</string>
 
     <!-- Kiểu gõ -->

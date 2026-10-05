@@ -70,8 +70,11 @@ class FakeInputConnection : InputConnection {
 
     override fun getCursorCapsMode(reqModes: Int): Int = 0
 
-    override fun getExtractedText(request: ExtractedTextRequest?, flags: Int): ExtractedText =
-        ExtractedText().apply {
+    var extractedOverride: (() -> ExtractedText?)? = null
+
+    override fun getExtractedText(request: ExtractedTextRequest?, flags: Int): ExtractedText? {
+        extractedOverride?.let { return it() }
+        return ExtractedText().apply {
             text = this@FakeInputConnection.text
             startOffset = 0
             partialStartOffset = -1
@@ -79,6 +82,7 @@ class FakeInputConnection : InputConnection {
             selectionStart = selStart
             selectionEnd = selEnd
         }
+    }
 
     override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
         val s = minOf(selStart, selEnd)
@@ -129,8 +133,14 @@ class FakeInputConnection : InputConnection {
         return true
     }
 
+    /** App xử lý action (send/search/done) — test gắn callback mô phỏng
+     *  app sửa text ngay trong khi action đang chạy (vd ô chat xoá trắng
+     *  sau khi gửi). */
+    var onEditorAction: ((Int) -> Unit)? = null
+
     override fun performEditorAction(editorAction: Int): Boolean {
         editorActions += editorAction
+        onEditorAction?.invoke(editorAction)
         return true
     }
 

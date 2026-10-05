@@ -206,7 +206,9 @@ class TelexEngine(
         // phím thô -> học) -> giữ nguyên, không bẻ thành "mã" nữa. Phải chạy
         // TRƯỚC lastTransform — cache "max"->"mã" cũ sẽ nuốt cổng này; cũng
         // phủ phím dấu thường ('x' cuối từ), không chỉ phím lệ thường.
-        if (opts.commonWord?.invoke(input.lowercase()) == true) {
+        if (!input.equals("dd", ignoreCase = true) &&
+            opts.commonWord?.invoke(input.lowercase()) == true
+        ) {
             lastTransform = input to input
             return input
         }

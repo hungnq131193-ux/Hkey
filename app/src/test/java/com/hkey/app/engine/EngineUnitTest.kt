@@ -89,6 +89,28 @@ class EngineUnitTest {
     }
 
     @Test
+    fun testBareOnsetNuclei() {
+        assertFalse(ViSyllable.isNativeSyllable("kye"))
+        assertFalse(ViSyllable.isNativeSyllable("tye"))
+        assertFalse(ViSyllable.isNativeSyllable("hye"))
+        assertFalse(ViSyllable.isNativeSyllable("bye"))
+        assertTrue(ViSyllable.isValid("bye"))
+        assertTrue(ViSyllable.isNativeSyllable("yên"))
+        assertTrue(ViSyllable.isNativeSyllable("yêu"))
+        assertTrue(ViSyllable.isNativeSyllable("yếm"))
+        assertTrue(ViSyllable.isNativeSyllable("quyên"))
+        assertTrue(ViSyllable.isNativeSyllable("quyền"))
+        assertTrue(ViSyllable.isNativeSyllable("quyết"))
+        assertTrue(ViSyllable.isNativeSyllable("khuyên"))
+        assertTrue(ViSyllable.isNativeSyllable("chuyện"))
+        assertTrue(ViSyllable.isNativeSyllable("khuya"))
+        assertTrue(ViSyllable.isNativeSyllable("ký"))
+        assertTrue(ViSyllable.isNativeSyllable("kỳ"))
+        assertTrue(ViSyllable.isNativeSyllable("ye"))
+        assertTrue(ViSyllable.isNativeSyllable("yeu"))
+    }
+
+    @Test
     fun testUndoByRetype() {
         val telex = TelexEngine()
         // 1.3: gõ lặp phím dấu phụ hủy mark về chữ thật

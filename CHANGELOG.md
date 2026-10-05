@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.5.7 (versionCode 33)
+
+- Sửa lỗi tự sửa oan từ tiếng Anh đúng ("key" -> "kye"): bản sửa tự động
+  giờ chỉ được áp khi ứng viên là âm tiết tiếng Việt hợp lệ — từ user
+  chọn/gõ nguyên văn (kể cả đã học) không còn bị đổi.
+- Sửa lỗi ENTER/phím gửi của app chat: khi ô nhập bị xoá ngay sau khi gửi
+  (kể cả xoá lặng không báo lại), bản tự sửa đang chờ không còn viết đè
+  vào ô trống hay dính vào tin nhắn mới — HKey kiểm tra lại nội dung
+  thật trước khi áp.
+- Telex: phím đúp nguyên âm trễ sau bán nguyên âm/phụ âm cuối giờ hoạt
+  động khi có bằng chứng tiếng Việt — "ddaya" -> "đây", "tayas" -> "tấy",
+  "ddaua" -> "đâu"; từ trần không dấu như "maya"/"data" vẫn giữ nguyên.
+- Phục hồi typo trên phím thô Telex: một lỗi phím vật lý (bấm nhầm phím
+  kề, thừa/thiếu/đảo ký tự) trước phím dấu được nhận diện — ví dụ
+  "nfuwowif" -> "người". Chỉ tự áp khi có đúng một kết quả; nhiều khả
+  năng chỉ hiện ở thanh gợi ý.
+
 ## 1.5.6 (versionCode 32)
 
 - Sửa lỗi nghiêm trọng: khi app xoá/trộn lại toàn bộ nội dung ô nhập

@@ -56,6 +56,7 @@ object ViSyllable {
         "ưo"
     )
     private val codas = setOf("", "c", "ch", "m", "n", "ng", "nh", "p", "t")
+    private val bareOnsetNuclei = setOf("ye", "yê", "yeu", "yêu")
 
     /** Âm cuối thanh chắc: chỉ đi với sắc (1) hoặc nặng (5) (1.3). */
     private val sharpCodas = setOf("c", "ch", "p", "t")
@@ -64,7 +65,15 @@ object ViSyllable {
      *  strict=false: vần chỉ-đóng (ă â iê uô ươ...) được phép đứng trần —
      *  dùng cho kiểm tra GIỮA lúc gõ ("việ" sẽ thành "việt"), còn commit
      *  cuối cùng cần strict vì dạng trần đó không phải từ ("muô","iế"). */
-    fun isValid(word: String, strict: Boolean = true): Boolean {
+    fun isValid(word: String, strict: Boolean = true): Boolean =
+        parseSyllable(word, strict, nativeOnly = false)
+
+    fun isNativeSyllable(word: String): Boolean =
+        parseSyllable(word, strict = true, nativeOnly = true)
+
+    private fun parseSyllable(
+        word: String, strict: Boolean, nativeOnly: Boolean
+    ): Boolean {
         if (word.isEmpty()) return false
         var toneCount = 0
         var toneVal = 0
@@ -86,6 +95,9 @@ object ViSyllable {
                 val nuc = rhyme.substring(0, len)
                 val coda = rhyme.substring(len)
                 if (nuc in nuclei && coda in codas) {
+                    if (nativeOnly && onset.isNotEmpty() && onset != "qu" &&
+                        nuc in bareOnsetNuclei
+                    ) continue
                     // "tẽt" không hợp lệ — thử cách tách khác trước khi bỏ
                     if (coda in sharpCodas &&
                         toneVal != 0 && toneVal != 1 && toneVal != 5

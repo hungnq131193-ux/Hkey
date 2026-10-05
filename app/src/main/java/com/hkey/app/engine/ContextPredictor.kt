@@ -472,6 +472,8 @@ class ContextPredictor {
          *  Latin ("vía"=187) — "taxi"->"tãi"(100), "photos"->"phốt"(38)
          *  không đủ mở đường tắt. */
         const val COMMON_FREQ = 200
+
+        val SHAPES = listOf("aw", "ow", "uw", "aa", "ee", "oo", "dd")
     }
 
     /** Nạp mô hình corpus từ vi_model.tsv (luồng nền parse xong, gọi trên
@@ -851,7 +853,7 @@ class ContextPredictor {
         val cands = ArrayList<Cand>()
         for (len in word.length..word.length + 1) {
             for (e in idx.byLen[len].orEmpty()) {
-                if (!eligible(e)) continue
+                if (!eligible(e) || !ViSyllable.isNativeSyllable(e.word)) continue
                 val target = if (ascii) e.base else e.word
                 val hit = if (len == word.length) transposedOnce(word, target)
                     else insertedInside(word, target)
@@ -871,6 +873,76 @@ class ContextPredictor {
         val r = cands.getOrNull(1) ?: return w.word
         val margin = if (w.ctx) weights.minMargin else weights.typoMargin
         return if (w.model >= r.model * margin) w.word else null
+    }
+
+    fun rawTelexCandidates(raw: String, engine: ImeEngine): List<String> {
+        if (engine !is TelexEngine) return emptyList()
+        val w = raw.lowercase()
+        if (w.length < 3 || w.length > 24 ||
+            w.any { it.code > 127 || !it.isLetter() }
+        ) return emptyList()
+        if (knowsWord(w)) return emptyList()
+        val tone = engine.toneIndexOf(w.last())
+        if (tone == 0 || w[w.length - 2] == w.last()) return emptyList()
+        var run = 1
+        for (i in 1 until w.length) {
+            if (w[i] == w[i - 1]) {
+                run++
+                if ((w[i] == 'w' && run >= 2) ||
+                    (w[i] in "aeod" && run >= 3)
+                ) return emptyList()
+            } else run = 1
+        }
+        val stem = w.dropLast(1)
+        val hasShape = SHAPES.any { stem.contains(it) } || 'w' in stem
+        if (!hasShape) return emptyList()
+        val orig = engine.transform(raw).lowercase()
+        if (ViSyllable.isValid(orig)) return emptyList()
+
+        fun inRun(s: String, i: Int) =
+            (i > 0 && s[i - 1] == s[i]) || (i + 1 < s.length && s[i + 1] == s[i])
+
+        val variants = LinkedHashSet<String>()
+        for (i in stem.indices) {
+            if (inRun(stem, i)) continue
+            for (c in qwertyNear[stem[i]].orEmpty()) {
+                variants.add(stem.substring(0, i) + c + stem.substring(i + 1) + w.last())
+            }
+        }
+        for (i in 1 until stem.length) {
+            if (inRun(stem, i)) continue
+            variants.add(stem.substring(0, i) + stem.substring(i + 1) + w.last())
+        }
+        for (i in 0 until stem.length - 1) {
+            if (stem[i] != stem[i + 1]) {
+                variants.add(
+                    stem.substring(0, i) + stem[i + 1] + stem[i] +
+                        stem.substring(i + 2) + w.last()
+                )
+            }
+        }
+        for (i in 1..stem.length) {
+            for (c in 'a'..'z') {
+                if (c == stem[i - 1] ||
+                    (i < stem.length && (c == stem[i] || stem[i - 1] == stem[i]))
+                ) continue
+                variants.add(stem.substring(0, i) + c + stem.substring(i) + w.last())
+            }
+        }
+        val seen = LinkedHashMap<String, Entry>()
+        for (v in variants) {
+            val out = engine.transform(v).lowercase()
+            if (out == orig || out == v) continue
+            if (!ViSyllable.isNativeSyllable(out) || toneOf(out) != tone) continue
+            val e = vocabulary[out] ?: continue
+            if (e.freq < COMMON_FREQ && e.personal < 2) continue
+            seen.putIfAbsent(out, e)
+        }
+        return seen.entries
+            .sortedWith(
+                compareByDescending<Map.Entry<String, Entry>> { it.value.freq }
+                    .thenBy { it.key }
+            ).map { it.key }
     }
 
     /** a, b cùng độ dài và khác nhau đúng bởi một lần đảo 2 ký tự kề. */
@@ -928,7 +1000,8 @@ class ContextPredictor {
                 ?: return null
             // Kết quả xoá đã là từ đúng ("tiếnge"->"tiếng") -> đó chính là
             // bản sửa, trả luôn — không qua cổng "đã đúng sẵn" bên dưới.
-            if (vocabulary.containsKey(word)) return word
+            if (vocabulary.containsKey(word))
+                return if (ViSyllable.isNativeSyllable(word)) word else null
         }
         if (vocabulary.containsKey(word)) return null
         val p1 = previousWord?.lowercase()?.trim() ?: ""
@@ -944,6 +1017,7 @@ class ContextPredictor {
         val uTri = userTriOf(p2, p1)
 
         fun offer(e: Entry, sameBase: Boolean) {
+            if (!ViSyllable.isNativeSyllable(e.word)) return
             val ctx = (bigramModel[p1]?.containsKey(e.word) == true) ||
                 (userBigram[p1]?.containsKey(e.word) == true) ||
                 (uTri?.containsKey(e.word) == true) ||

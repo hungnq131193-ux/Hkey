@@ -34,6 +34,8 @@ class TelexEngine(
         'j' to 5  // Nặng
     )
 
+    internal fun toneIndexOf(c: Char) = toneMap[c.lowercaseChar()] ?: 0
+
     /** Sentinel cho luật "gõ lặp hủy" (1.3): BREAK chặn gộp cặp literal,
      *  W_LITERAL đứng thay 'w' thật để khỏi bị rule ư/aw/ow/uw ăn. */
     private val MARK_BREAK = ''
@@ -415,6 +417,29 @@ class TelexEngine(
                     text = res
                     up = up.copyOf(text.length)
                     if (t2 > 0) toneIdx = t2
+                }
+            } else if (word.isNotEmpty()) {
+                applyRetroDouble(word, text.last(), false)?.first?.let { res ->
+                    val marked = word.any {
+                        it.code > 127 && it != MARK_BREAK && it != W_LITERAL
+                    }
+                    val effTone = if (t2 > 0) t2 else toneIdx
+                    val i = if (effTone > 0)
+                        ViTone.toneTargetIndex(res, opts.newToneStyle) else -1
+                    val cand = if (i >= 0)
+                        res.substring(0, i) +
+                            vowelBase.getValue(res[i])[effTone] +
+                            res.substring(i + 1)
+                    else res
+                    val known = word.last() != 'y' &&
+                        opts.commonWord?.invoke(cand) == true
+                    if ((marked || hasCmd || t2 > 0 || known) &&
+                        ViSyllable.isNativeSyllable(cand)
+                    ) {
+                        text = res
+                        up = up.copyOf(text.length)
+                        if (t2 > 0) toneIdx = t2
+                    }
                 }
             }
         }

@@ -1066,6 +1066,16 @@ class HKeyIME : InputMethodService() {
     private fun resumeWord(c: String): Boolean {
         val word = adjacentWordBeforeCursor()
         if (word.isEmpty()) return false
+        val freshTail = currentInputConnection
+            ?.getTextBeforeCursor(word.length, 0)?.toString()
+        if (freshTail != word) {
+            tailTracker.invalidate()
+            contextCache = null
+            lastCommittedWord = ""
+            lastCommitWasRaw = false
+            lastAutoFix = null
+            return false
+        }
         if (TextContext.gluedToken(tailNow())) return false
         if (word == lastCommittedWord && lastCommitWasRaw) return false
         if (!ViSyllable.isValid(word.lowercase(), strict = false)) return false
@@ -1169,8 +1179,10 @@ class HKeyIME : InputMethodService() {
         // P2: đường async được sửa cả khi chốt phím thô (typed vẫn có glyph
         // để typoFix bắt — "khoogn" hiển thị thô vẫn thành "không"); đường
         // đồng bộ giữ guard cũ typedWord !== raw.
-        val fixed = if (!canFix || asyncFix || typedWord === raw) null
-            else computeCorrection(typed, prev, prev2)
+        val fixed = if (!canFix || asyncFix) null
+            else computeCorrection(
+                typed, prev, prev2, raw, engine, rawOnly = typedWord === raw
+            )
             // 1.2: bản sửa trả chữ thường — áp lại kiểu hoa của từ đã gõ
             ?.let { TextContext.matchCase(typed, it) }
         val word = expanded ?: fixed ?: typedWord
@@ -1206,14 +1218,22 @@ class HKeyIME : InputMethodService() {
         if (pendingFix) {
             val gen = fixGen
             val p = prev; val p2 = prev2; val ty = typed
+            val eng = engine
             worker.post {
                 // P5: từ điển chưa sẵn sàng -> f=null, chỉ học từ đã chốt
                 // 1.5.0: chữ ĐÃ COMMIT là từ user xác nhận (vừa hoàn tác ->
                 // học "khoogn") thì bỏ fix — cổng này phải so trên typedWord,
                 // không phải bản transform "khôgn" (đó là bug sửa oan lặp).
-                val f = if (!predictorReady || predictor.knowsWord(typedWord)) null
-                else (predictor.typoFix(ty, p, p2)
+                val rawCands = if (predictorReady &&
+                    !predictor.knowsWord(typedWord)
+                ) predictor.rawTelexCandidates(raw, eng) else emptyList()
+                val f = if (!predictorReady || predictor.knowsWord(typedWord) ||
+                    rawCands.size > 1
+                ) null
+                else (rawCands.singleOrNull()
+                    ?: predictor.typoFix(ty, p, p2)
                     ?: predictor.correction(ty, p, p2))
+                    ?.takeIf { typedWord !== raw || it.any { c -> c.code > 127 } }
                     ?.let { TextContext.matchCase(ty, it) }
                 repeatHandler.post {
                     applyPendingFix(gen, typedWord, raw, f, p, p2)
@@ -1230,24 +1250,29 @@ class HKeyIME : InputMethodService() {
         fixed: String?, prev: String, prev2: String
     ) {
         val ic = currentInputConnection
-        val tail = if (ic != null) autoFixTail(typedWord) else 0
-        if (gen == fixGen && currentComposingWord.isEmpty() &&
-            fixed != null && tail == typedWord.length + 1
-        ) {
-            ic?.beginBatchEdit()
-            try {
-                ic?.let { icDeleteBack(it, tail) }
-                tailTracker.drop(tail)
-                ic?.let { icCommit(it, "$fixed ") }
-                tailTracker.append("$fixed ")
-            } finally {
-                ic?.endBatchEdit()
+        if (gen == fixGen && currentComposingWord.isEmpty() && fixed != null) {
+            val before =
+                ic?.getTextBeforeCursor(typedWord.length + 1, 0)?.toString()
+            if (ic != null && before == "$typedWord ") {
+                val tail = typedWord.length + 1
+                ic.beginBatchEdit()
+                try {
+                    icDeleteBack(ic, tail)
+                    tailTracker.drop(tail)
+                    icCommit(ic, "$fixed ")
+                    tailTracker.append("$fixed ")
+                } finally {
+                    ic.endBatchEdit()
+                }
+                lastAutoFix = AutoFix(fixed, typedWord, raw)
+                lastCommittedWord = fixed
+                contextCache = null
+                learn(prev, fixed, prev2)
+                requestSuggestions()
+                return
             }
-            lastAutoFix = AutoFix(fixed, typedWord, raw)
-            lastCommittedWord = fixed
+            tailTracker.invalidate()
             contextCache = null
-            learn(prev, fixed, prev2)
-            requestSuggestions()
             return
         }
         // Không áp được -> học từ đã chốt thay (giữ hành vi cũ)
@@ -1417,6 +1442,7 @@ class HKeyIME : InputMethodService() {
     }
 
     private fun handleEnter() {
+        fixGen++
         commitComposing()
         val ic = currentInputConnection ?: return
         // 1.5: ô đặt action (send/search/go/done) -> gọi action app.
@@ -1428,6 +1454,11 @@ class HKeyIME : InputMethodService() {
             tailTracker.invalidate() // app tự xử lý action — text đổi ngoài tầm
             cursorUnknown()
             updateAutoShift()
+            tailTracker.invalidate()
+            contextCache = null
+            lastAutoFix = null
+            lastCommittedWord = ""
+            lastCommitWasRaw = false
             clearStaleCandidates()
             return
         }
@@ -1437,15 +1468,23 @@ class HKeyIME : InputMethodService() {
             // app thoát touch-mode / chuyển focus -> bàn phím bị ẩn.
             icCommit(ic, "\n")
             tailTracker.append("\n")
-        } else {
-            // ô một dòng không action / terminal (TYPE_NULL): phím ENTER thật,
-            // gửi qua sendDownUpKeyEvents để có đủ cờ bàn phím mềm.
-            sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
-            tailTracker.invalidate() // app có thể đã thay đổi — đọc lại lần sau
-            cursorUnknown()
+            contextCache = null
+            updateAutoShift()
+            clearStaleCandidates()
+            return
         }
+        // ô một dòng không action / terminal (TYPE_NULL): phím ENTER thật,
+        // gửi qua sendDownUpKeyEvents để có đủ cờ bàn phím mềm.
+        sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
+        tailTracker.invalidate() // app có thể đã thay đổi — đọc lại lần sau
+        cursorUnknown()
         contextCache = null
         updateAutoShift()
+        tailTracker.invalidate()
+        contextCache = null
+        lastAutoFix = null
+        lastCommittedWord = ""
+        lastCommitWasRaw = false
         clearStaleCandidates()
     }
 
@@ -1520,7 +1559,8 @@ class HKeyIME : InputMethodService() {
         val ctx: String,
         val ctx2: String,
         val tokenGlued: Boolean,
-        val raw: String = current // 1.5.1: buffer phím thô — ô cuối là lối thoát
+        val raw: String = current, // 1.5.1: buffer phím thô — ô cuối là lối thoát
+        val engine: ImeEngine? = null
     )
 
     internal data class CandidateSet(val c1: String, val c2: String, val c3: String)
@@ -1535,16 +1575,26 @@ class HKeyIME : InputMethodService() {
         val completions = if (req.tokenGlued) emptyList()
             else predictor.completions(req.current, req.ctx, req.ctx2, limit = 4)
         // 3.4: chỉ đề nghị sửa khi từ đang gõ không phải tiền tố hợp lệ
-        val fix = req.restore
-            ?: if (req.tokenGlued || predictor.isPrefixOfKnownWord(req.current)) null
-            else predictor.typoFix(req.current, req.ctx, req.ctx2)
+        val rawCands = if (!req.tokenGlued && req.engine != null)
+            predictor.rawTelexCandidates(req.raw, req.engine)
+                .map { TextContext.matchCase(req.current, it) }
+        else emptyList()
+        val fix = when {
+            rawCands.size > 1 -> null
+            req.restore != null &&
+                (ViSyllable.isValid(req.restore.lowercase()) ||
+                    rawCands.isEmpty()) -> req.restore
+            rawCands.size == 1 -> rawCands[0]
+            req.tokenGlued || predictor.isPrefixOfKnownWord(req.current) -> null
+            else -> predictor.typoFix(req.current, req.ctx, req.ctx2)
                 ?: predictor.correction(req.current, req.ctx, req.ctx2)
+        }
         val fixCased = fix?.let { TextContext.matchCase(req.current, it) }
         // 1.5.1: transform bẻ phím thô ("max"->"mã", "ddc"->"đc") -> ô cuối
         // luôn là chữ đã gõ để user chọn giữ nguyên; chạm = chốt + học.
         val rawSide = req.raw.takeIf { it != req.current && it != fixCased }
-        val sides = completions.asSequence()
-            .map { TextContext.matchCase(req.current, it) }
+        val sides = (completions.asSequence()
+            .map { TextContext.matchCase(req.current, it) } + rawCands)
             .filter { it != fixCased && it != req.current && it != rawSide }
             .distinct()
             .take(2)
@@ -1565,13 +1615,21 @@ class HKeyIME : InputMethodService() {
 
     /** P1/P2: correction+typoFix chạy trên worker; main chờ tối đa 30 ms
      *  (đường đồng bộ cho Enter/dấu câu — quá hạn thì không sửa). */
-    internal fun computeCorrection(typed: String, prev: String, prev2: String): String? {
+    internal fun computeCorrection(
+        typed: String, prev: String, prev2: String,
+        raw: String = typed, eng: ImeEngine? = null, rawOnly: Boolean = false
+    ): String? {
         if (!predictorReady) return null // P5: chưa có chỉ mục -> không sửa
         val task = java.util.concurrent.FutureTask<String?> {
             // 1.4.2: typoFix trước — lỗi đảo/chèn ký tự là bằng chứng mạnh
             // hơn repair-xoá của correction ("khôgn" -> "không", không phải
             // "khôn"); correction bắt lệch dấu/phím thừa còn lại.
-            predictor.typoFix(typed, prev, prev2)
+            val rawCands = if (eng != null)
+                predictor.rawTelexCandidates(raw, eng) else emptyList()
+            if (rawCands.size > 1) null
+            else if (rawCands.size == 1) rawCands[0]
+            else if (rawOnly) null
+            else predictor.typoFix(typed, prev, prev2)
                 ?: predictor.correction(typed, prev, prev2)
         }
         worker.post(task)
@@ -1614,7 +1672,7 @@ class HKeyIME : InputMethodService() {
                 else -> raw.takeIf { ViSyllable.restorable(it, current) }
             }
             val req = SuggestRequest(
-                ++suggestGen, current, restore, ctx, ctx2, tokenGlued, raw
+                ++suggestGen, current, restore, ctx, ctx2, tokenGlued, raw, engine
             )
             worker.post {
                 val c = computeCandidates(req)

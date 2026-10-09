@@ -67,8 +67,8 @@ object ViModelBin {
             // ghép) trước đây gây IndexOutOfBoundsException làm liệt IME.
             if (bos.any { it < 0 || it >= nw }) return null
             if (biP.any { it < 0 || it >= nw } || biN.any { it < 0 || it >= nw }) return null
-            if (triP2.any { it < 0 || it >= nw } || triP1.any { it < 0 || it >= nw } ||
-                triN.any { it < 0 || it >= nw }
+            if (tP2.any { it < 0 || it >= nw } || tP1.any { it < 0 || it >= nw } ||
+                tN.any { it < 0 || it >= nw }
             ) return null
             return Packed(words, freqs, bos, biP, biN, biC, tP2, tP1, tN, tC)
         } catch (e: Throwable) {

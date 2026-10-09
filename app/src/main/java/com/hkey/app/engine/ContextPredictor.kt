@@ -668,6 +668,9 @@ class ContextPredictor {
         userBigram.clear()
         userTrigram.clear()
         indexCache?.topCache = null
+        // 1.5.9: bump version để snapshot index đang build dở không lắp lại
+        // từ vừa bị xóa (mọi hàm đổi vocab khác đều bump).
+        vocabVersion++
     }
 
     /** Giới hạn số từ học; vượt thì bỏ mục ít dùng/cũ nhất (3.6). Trigram
@@ -676,9 +679,21 @@ class ContextPredictor {
         val learned = vocabulary.values.filter { !it.fromDict }
             .sortedWith(compareBy({ it.personal }, { it.lastSeen }))
         val idx = indexCache
-        for (e in learned.take((learned.size - max).coerceAtLeast(0))) {
+        val evicted = learned.take((learned.size - max).coerceAtLeast(0))
+        for (e in evicted) {
             vocabulary.remove(e.word)
             idx?.remove(e)
+        }
+        // 1.5.9: dọn luôn cạnh n-gram cá nhân trỏ tới từ bị trục xuất —
+        // không thì predictNext vẫn gợi ý từ đã xóa.
+        if (evicted.isNotEmpty()) {
+            val gone = evicted.map { it.word }.toSet()
+            for (m in userBigram.values) gone.forEach { m.remove(it) }
+            userBigram.keys.removeAll(gone)
+            for (m in userTrigram.values) gone.forEach { m.remove(it) }
+            userTrigram.keys.removeAll { k ->
+                k.substringBefore('|') in gone || k.substringAfter('|') in gone
+            }
         }
         if (learned.size > max) vocabVersion++
         val triCap = max * 4
@@ -734,7 +749,9 @@ class ContextPredictor {
         uTri?.keys?.let(cands::addAll)
         if (cands.isEmpty()) return index.top()
         return cands.asSequence()
-            .filter { vocabulary[it]?.let { e -> eligible(e) } != false }
+            // 1.5.9: entry null (từ đã bị trục xuất) phải bị loại — trước đây
+            // `!= false` giữ lại cả null khiến từ đã xóa vẫn được gợi ý.
+            .filter { vocabulary[it]?.let { e -> eligible(e) } == true }
             .map { it to contextScore(p2, p1, it, uTri) }
             .sortedByDescending { it.second }.take(3)
             .map { displayOf(it.first) }.toList()

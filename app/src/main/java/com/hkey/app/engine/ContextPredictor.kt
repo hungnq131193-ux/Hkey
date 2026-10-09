@@ -749,9 +749,11 @@ class ContextPredictor {
         uTri?.keys?.let(cands::addAll)
         if (cands.isEmpty()) return index.top()
         return cands.asSequence()
-            // 1.5.9: entry null (từ đã bị trục xuất) phải bị loại — trước đây
-            // `!= false` giữ lại cả null khiến từ đã xóa vẫn được gợi ý.
-            .filter { vocabulary[it]?.let { e -> eligible(e) } == true }
+            // 1.5.9: giữ nguyên `!= false` như cũ — entry null (từ chỉ có
+            // trong seed bigram, chưa nạp từ điển) vẫn được gợi ý; từ đã bị
+            // trục xuất thì không còn lọt vào ứng viên nhờ dọn n-gram ở
+            // boundLearned() bên trên.
+            .filter { vocabulary[it]?.let { e -> eligible(e) } != false }
             .map { it to contextScore(p2, p1, it, uTri) }
             .sortedByDescending { it.second }.take(3)
             .map { displayOf(it.first) }.toList()

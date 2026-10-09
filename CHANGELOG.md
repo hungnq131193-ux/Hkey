@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.10 (versionCode 36)
+
+- Sửa "test" cứ thành "tesst", "user" thành "usser": "tesst"/"usser" lọt vào
+  dữ liệu học từ trước không phải từ thật mà là phím Telex gõ lặp (= chữ s
+  thường). Cổng "từ đã học giữ nguyên" giờ bỏ qua chuỗi có phím dấu đúp
+  (ss/ff/rr/xx/jj) — Telex gộp về "test"/"user" như đúng quy tắc; từ thật đã
+  học ("max") vẫn được giữ nguyên, không bẻ thành "mã".
+
 ## 1.5.9 (versionCode 35)
 
 - Sửa lỗi gõ sai hàng loạt (đợt review 09/10/2026):

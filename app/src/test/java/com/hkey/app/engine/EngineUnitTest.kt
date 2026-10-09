@@ -352,6 +352,21 @@ class EngineUnitTest {
         // Gợi ý từ tiếp theo vẫn hoạt động sau khi index dựng lại
         assertTrue(predictor.predictNext("hôm").contains("nay"))
     }
+
+    @Test
+    fun learnedDoubledKey_notKeptAsWord() {
+        // 1.5.10: "tesst"/"usser" lọt vào dữ liệu học từ trước KHÔNG phải từ
+        // thật mà là phím Telex gõ lặp (= chữ s thường). Phím dấu đúp không
+        // bao giờ được cổng "từ đã học" giữ nguyên — phải gộp về "test"/"user".
+        val e = TelexEngine(EngineOptions(
+            commonWord = { it in setOf("tesst", "usser", "max") }
+        ))
+        assertEquals("test", e.transform("tesst"))
+        assertEquals("user", e.transform("usser"))
+        assertEquals("Test", e.transform("Tesst"))
+        // Từ thật đã học vẫn được giữ nguyên, không bẻ thành "mã".
+        assertEquals("max", e.transform("max"))
+    }
 }
 
 /** 1.4.5: phím ở vị trí lệ thường — dấu thanh kẹt giữa cụm nguyên âm

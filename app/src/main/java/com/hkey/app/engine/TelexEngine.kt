@@ -208,8 +208,16 @@ class TelexEngine(
         // phím thô -> học) -> giữ nguyên, không bẻ thành "mã" nữa. Phải chạy
         // TRƯỚC lastTransform — cache "max"->"mã" cũ sẽ nuốt cổng này; cũng
         // phủ phím dấu thường ('x' cuối từ), không chỉ phím lệ thường.
-        if (!input.equals("dd", ignoreCase = true) &&
-            opts.commonWord?.invoke(input.lowercase()) == true
+        // 1.5.10: "tesst"/"usser" lọt vào dữ liệu học từ trước KHÔNG phải từ
+        // thật mà là phím Telex gõ lặp (= chữ s thường). Phím dấu đúp
+        // (ss/ff/rr/xx/jj) luôn là chuỗi phím, không phải từ — không giữ
+        // nguyên, để Telex gộp như thường ("tesst"->"test").
+        val lower = input.lowercase()
+        val hasDoubledToneKey = (1 until lower.length).any {
+            lower[it] == lower[it - 1] && lower[it] in "sfrxj"
+        }
+        if (!input.equals("dd", ignoreCase = true) && !hasDoubledToneKey &&
+            opts.commonWord?.invoke(lower) == true
         ) {
             lastTransform = input to input
             return input

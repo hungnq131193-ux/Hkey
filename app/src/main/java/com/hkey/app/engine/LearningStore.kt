@@ -57,9 +57,19 @@ class LearningStore(private val file: File) {
         for ((p, n, c) in data.bigrams) sb.appendLine("b\t$p\t$n\t$c")
         for (t in data.trigrams) sb.appendLine("t\t${t.prev2}\t${t.prev}\t${t.next}\t${t.count}")
         tmp.writeText(sb.toString())
+        // 1.5.9: fsync trước rename — kill app/mất nguồn đúng lúc ghi không
+        // để lại file dở (lần load sau mất dữ liệu âm thầm).
+        try {
+            java.io.FileOutputStream(tmp, true).channel.use { it.force(true) }
+        } catch (_: Exception) { /* best effort */ }
         if (!tmp.renameTo(file)) {
-            file.delete()
-            tmp.renameTo(file)
+            // 1.5.9: renameTo có thể thất bại (khác filesystem...) — copy thủ
+            // công thay vì XÓA file tốt trước như trước đây (mất trắng cả bản
+            // cũ lẫn mới nếu lần rename thứ 2 cũng thất bại).
+            try {
+                tmp.copyTo(file, overwrite = true)
+            } catch (_: Exception) { /* giữ bản cũ còn tốt */ }
+            tmp.delete()
         }
     }
 

@@ -38,8 +38,11 @@ object ViModelBin {
             val nb = buf.int
             val nbi = buf.int
             val ntri = buf.int
+            // 1.5.9: thêm chặn trên cho nb (trước đây quên) — nb rác gây
+            // OutOfMemoryError khi cấp IntArray.
             if (nw < 0 || nb < 0 || nbi < 0 || ntri < 0 ||
-                nw > 1_000_000 || nbi > 5_000_000 || ntri > 5_000_000
+                nw > 1_000_000 || nb > 5_000_000 ||
+                nbi > 5_000_000 || ntri > 5_000_000
             ) return null
             val words = Array(nw) { "" }
             val freqs = IntArray(nw)
@@ -60,8 +63,17 @@ object ViModelBin {
             for (i in 0 until ntri) {
                 tP2[i] = buf.int; tP1[i] = buf.int; tN[i] = buf.int; tC[i] = buf.int
             }
+            // 1.5.9: kiểm tra biên mọi word-index — index rác (file hỏng/cắt
+            // ghép) trước đây gây IndexOutOfBoundsException làm liệt IME.
+            if (bos.any { it < 0 || it >= nw }) return null
+            if (biP.any { it < 0 || it >= nw } || biN.any { it < 0 || it >= nw }) return null
+            if (triP2.any { it < 0 || it >= nw } || triP1.any { it < 0 || it >= nw } ||
+                triN.any { it < 0 || it >= nw }
+            ) return null
             return Packed(words, freqs, bos, biP, biN, biC, tP2, tP1, tN, tC)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // 1.5.9: bắt cả Error (vd OutOfMemoryError khi counts rác) để
+            // luôn fallback về từ điển seed thay vì crash.
             return null // buffer ngắn/hỏng
         }
     }

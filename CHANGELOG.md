@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.9 (versionCode 35)
+
+- Sửa lỗi gõ sai hàng loạt (đợt review 09/10/2026):
+  - Ô hoàn tác auto-correct giờ hiện đúng chữ user đã gõ (vd "khoogn")
+    thay vì bản biến dạng ("khôgn"); chạm vào không còn học rác vào từ điển.
+  - "Bỏ dấu tự do" kiểu Unikey hoạt động lại sau auto-fix/chạm gợi ý:
+    cờ phím-thô được tính lại đúng ở mọi đường chốt từ.
+  - Bản sửa nền tính xong nhưng không áp kịp (user gõ tiếp quá nhanh)
+    thì không còn học luôn từ typo — typo không bị "khóa" vĩnh viễn nữa.
+  - Ô gợi ý giữa không bao giờ hiện bản transform méo mó ("new"->"neư").
+  - Bấm ⌫ sau dấu câu/xuống dòng không còn hoàn tác nhầm từ đã sửa trước đó.
+  - File model hỏng không còn gây crash/liệt bàn phím: chặn nb quá lớn,
+    kiểm tra biên mọi word-index, bắt cả Error để fallback từ điển seed.
+  - Lưu dữ liệu học an toàn hơn: fsync trước rename, không xóa file tốt
+    khi rename thất bại.
+  - Từ học bị trục xuất khỏi giới hạn thì n-gram cá nhân cũng được dọn —
+    không còn gợi ý từ đã xóa; xóa dữ liệu học không còn race với index nền.
+
 ## 1.5.8 (versionCode 34)
 
 - Gợi ý nhanh và sạch hơn khi gõ nhanh: chỉ tính bản MỚI NHẤT thay vì chạy

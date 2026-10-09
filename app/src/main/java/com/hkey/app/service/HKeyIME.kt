@@ -1123,6 +1123,8 @@ class HKeyIME : InputMethodService() {
             ic.endBatchEdit()
         }
         lastCommittedWord = new
+        // 1.5.9: từ mới là dạng đã biến đổi (tiếng Việt), không phải phím thô.
+        lastCommitWasRaw = false
         contextCache = null
         requestSuggestions()
         return true
@@ -1135,6 +1137,9 @@ class HKeyIME : InputMethodService() {
             return
         }
         commitComposing()
+        // 1.5.9: gõ dấu câu = chấp nhận bản sửa — đóng cửa sổ undo để ⌫ sau
+        // này không hoàn tác nhầm từ cũ.
+        lastAutoFix = null
         currentInputConnection?.let { icCommit(it, p) }
         tailTracker.append(p)
         contextCache = null
@@ -1214,7 +1219,10 @@ class HKeyIME : InputMethodService() {
         // 1.4.0: từ chốt là chính phím thô (restorable) -> đánh dấu để
         // resumeWord không kéo tiếng Anh về buffer biến dạng
         lastCommitWasRaw = word === raw
-        lastAutoFix = if (fixed != null) AutoFix(word, typed, raw) else null
+        // 1.5.9: undo phải hiện đúng chữ user đã thấy (typedWord, vd "khoogn"
+        // sau live-restore), không phải bản transform thô (typed, vd "khôgn")
+        // — đồng nhất với đường async applyPendingFix.
+        lastAutoFix = if (fixed != null) AutoFix(word, typedWord, raw) else null
         currentComposingWord.clear()
         contextCache = null
         if (pendingFix) {
@@ -1268,6 +1276,10 @@ class HKeyIME : InputMethodService() {
                 }
                 lastAutoFix = AutoFix(fixed, typedWord, raw)
                 lastCommittedWord = fixed
+                // 1.5.9: từ vừa chốt là bản sửa tiếng Việt, không còn là phím
+                // thô -> tính lại cờ để resumeWord ("bỏ dấu tự do") không bị
+                // chặn oan bởi cờ cũ.
+                lastCommitWasRaw = false
                 contextCache = null
                 learn(prev, fixed, prev2)
                 requestSuggestions()
@@ -1277,8 +1289,10 @@ class HKeyIME : InputMethodService() {
             contextCache = null
             return
         }
-        // Không áp được -> học từ đã chốt thay (giữ hành vi cũ)
-        learn(prev, typedWord, prev2)
+        // Không áp được -> chỉ học khi không tìm được bản sửa (fixed == null).
+        // Nếu đã biết chắc là typo (fixed != null) mà không áp kịp thì KHÔNG
+        // học, tránh "khóa" typo vĩnh viễn (1.5.9).
+        if (fixed == null) learn(prev, typedWord, prev2)
     }
 
     private fun handleSpace() {
@@ -1461,6 +1475,9 @@ class HKeyIME : InputMethodService() {
         contextCache = null
         contextPairBeforeCursor().let { learn(it.first, fix.typed, it.second, force = true) }
         lastCommittedWord = fix.typed
+        // 1.5.9: tính lại cờ phím thô theo chữ vừa hoàn tác (phím thô khi
+        // typed chính là phím thô user đã gõ, vd live-restore).
+        lastCommitWasRaw = fix.typed == fix.raw
         requestSuggestions()
     }
 
@@ -1492,6 +1509,8 @@ class HKeyIME : InputMethodService() {
             icCommit(ic, "\n")
             tailTracker.append("\n")
             contextCache = null
+            // 1.5.9: xuống dòng = chấp nhận bản sửa — đóng cửa sổ undo.
+            lastAutoFix = null
             updateAutoShift()
             clearStaleCandidates()
             return
@@ -1535,6 +1554,8 @@ class HKeyIME : InputMethodService() {
         if (word.isEmpty()) return
         lastAutoFix = null
         val ctxPair = contextPairBeforeCursor()
+        // 1.5.9: giữ phím thô đang gõ để tính lại cờ lastCommitWasRaw bên dưới.
+        val rawKeys = currentComposingWord.toString()
         // 1.2: gợi ý trả chữ thường — áp lại kiểu hoa đang gõ / shift đầu câu
         val cased = when {
             // 1.4.0: áp kiểu hoa theo đúng chữ trên màn hình (live restore = phím thô)
@@ -1550,6 +1571,10 @@ class HKeyIME : InputMethodService() {
         // — force để ô phím thô "max" trông-như-typo vẫn được học.
         learn(ctxPair.first, word, ctxPair.second, force = true)
         lastCommittedWord = cased
+        // 1.5.9: chỉ coi là phím thô khi từ chạm vào chính là phím thô user
+        // vừa gõ (vd chạm "new" đang live-restore) — còn lại tính lại cờ để
+        // resumeWord không bị chặn oan bởi cờ cũ.
+        lastCommitWasRaw = rawKeys.isNotEmpty() && word.equals(rawKeys, ignoreCase = true)
         currentComposingWord.clear()
         consumeShift()
         contextCache = null
@@ -1624,9 +1649,12 @@ class HKeyIME : InputMethodService() {
         else emptyList()
         val fix = when {
             rawCands.size > 1 -> null
+            // 1.5.9: chỉ đề nghị bản restore khi nó là âm tiết VN hợp lệ,
+            // hoặc là phím thô (đường 1.3) — KHÔNG bao giờ đặt bản transform
+            // méo mó ("new"->"neư") làm ô giữa.
             req.restore != null &&
                 (ViSyllable.isValid(req.restore.lowercase()) ||
-                    rawCands.isEmpty()) -> req.restore
+                    (req.restore == req.raw && rawCands.isEmpty())) -> req.restore
             rawCands.size == 1 -> rawCands[0]
             req.tokenGlued || predictor.isPrefixOfKnownWord(req.current) -> null
             else -> predictor.typoFix(req.current, req.ctx, req.ctx2)

@@ -218,7 +218,34 @@ class TelexEngine(
             lastTransform = input to input
             return input
         }
+        // 1.5.14: 'd' cho đ gõ MUỘN — không kề D đầu âm tiết ("Dadx"->"Đã").
+        // Tổng quát cho mọi vị trí d lẻ >= 2 và mọi dấu: d lẻ được gộp vào
+        // D đầu, chỉ chấp nhận khi ra âm tiết Việt hoàn chỉnh (strict) hoặc
+        // từ đã biết — "Dads"->"Đá", "Dadf"->"Đà", "Dad"->"Đa"; "dada" giữ
+        // nguyên vì "đâ" không phải âm tiết hoàn chỉnh. Từ đã học vẫn được
+        // cổng 1.5.1 giữ nguyên ở phía trên.
+        promoteLateD(input)?.let { promoted ->
+            val out = transformBody(promoted)
+            val lo = out.lowercase()
+            if (ViSyllable.isValid(lo, strict = true) ||
+                opts.commonWord?.invoke(lo) == true
+            ) return out
+        }
         return transformBody(input)
+    }
+
+    /** 1.5.14: tìm 'd' lẻ gõ muộn (index >= 2, không kề D đầu) để gộp thành
+     *  đ — kiểu gõ D-a-d-x của user (nhớ ra đ sau khi đã gõ nguyên âm).
+     *  Trả về input đã đưa đ lên đầu và bỏ d lẻ, giữ nguyên hoa/thường;
+     *  null nếu không có d muộn ("dd" kề nhau vẫn đi đường cũ). */
+    private fun promoteLateD(input: String): String? {
+        if (input.length < 3 || !input[0].equals('d', ignoreCase = true)) return null
+        val idx = input.indexOf('d', startIndex = 2, ignoreCase = true)
+        if (idx < 0) return null
+        val sb = StringBuilder(input.length)
+        sb.append(if (input[0].isUpperCase()) 'Đ' else 'đ')
+        for (i in 1 until input.length) if (i != idx) sb.append(input[i])
+        return sb.toString()
     }
 
     /** Phần transform không qua cổng 1.5.1 — dùng cho cả đường chính và

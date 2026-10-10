@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.14 (versionCode 40)
+
+- Gõ đ kiểu "nhớ muộn": phím 'd' cho đ không cần kề D đầu nữa — "Dadx" ra
+  "Đã", "Dads" ra "Đá", "Dad" ra "Đa". Áp dụng chung cho mọi vị trí d lẻ và
+  mọi dấu, chỉ khi kết quả là âm tiết Việt hoàn chỉnh ("dada" giữ nguyên vì
+  "đâ" không phải âm tiết hoàn chỉnh; từ đã học vẫn được giữ nguyên).
+- Sửa rung phím không hoạt động: lấy Vibrator lười (tránh null lúc khởi tạo)
+  và thử cả VibrationEffect trực tiếp lẫn haptic feedback hệ thống.
+
 ## 1.5.13 (versionCode 39)
 
 - Gộp phím VI/EN vào space: bỏ phím VI/EN riêng, vuốt space sang phải để

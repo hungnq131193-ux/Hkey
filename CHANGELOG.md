@@ -8,6 +8,9 @@
   "đâ" không phải âm tiết hoàn chỉnh; từ đã học vẫn được giữ nguyên).
 - Sửa rung phím không hoạt động: lấy Vibrator lười (tránh null lúc khởi tạo)
   và thử cả VibrationEffect trực tiếp lẫn haptic feedback hệ thống.
+- Sửa rung/âm thanh phím chỉ kêu với phím lặp (giữ ⌫): `feed()` giờ gọi cho
+  mọi phím bấm, không chỉ khi `touch.down()` trả true (phím thường trước đây
+  bị mất feedback).
 
 ## 1.5.13 (versionCode 39)
 

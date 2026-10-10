@@ -1088,8 +1088,10 @@ class KeyboardView(context: Context) : View(context) {
                 }
                 // Repeat: bắn ngay + consumed luôn (nhả không bắn lại — sửa
                 // xoá đúp) + nạp lịch lặp.
+                // 1.5.14: feed() (rung + âm) cho MỌI phím, không chỉ phím lặp —
+                // touch.down() trả false cho phím thường nên trước đây mất feedback.
+                feed(k)
                 if (touch.down(pid, k, x, e.eventTime)) {
-                    feed(k)
                     handler.removeCallbacks(repeater)
                     handler.postDelayed(repeater, touch.repeatFirstMs)
                 }

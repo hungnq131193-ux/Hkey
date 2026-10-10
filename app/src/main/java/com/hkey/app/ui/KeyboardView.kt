@@ -335,7 +335,9 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-    private val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    // Lấy vibrator lười (lazy) — tránh null nếu context lúc khởi tạo chưa sẵn service.
+    private val vibrator: Vibrator? get() =
+        context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
 
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val txtPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -929,21 +931,21 @@ class KeyboardView(context: Context) : View(context) {
         }
         // 1.4.0 (C5): rung theo VIBRATE_STRENGTH ms qua VibrationEffect
         // thay KEYBOARD_TAP hệ thống (không điều chỉnh được cường độ).
+        // 1.5.14: thử cả hai — VibrationEffect trực tiếp + haptic feedback
+        // (một số máy chỉ nhận một trong hai).
         if (vibrateEnabled && hapticMs > 0) {
-            val vib = vibrator
-            if (vib != null) {
-                vib.vibrate(
+            try {
+                vibrator?.vibrate(
                     VibrationEffect.createOneShot(
                         hapticMs.toLong(), VibrationEffect.DEFAULT_AMPLITUDE
                     )
                 )
-            } else {
-                @Suppress("DEPRECATION")
-                performHapticFeedback(
-                    HapticFeedbackConstants.KEYBOARD_TAP,
-                    HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
-                )
-            }
+            } catch (_: Exception) { }
+            @Suppress("DEPRECATION")
+            performHapticFeedback(
+                HapticFeedbackConstants.KEYBOARD_TAP,
+                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+            )
         }
     }
 

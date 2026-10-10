@@ -927,7 +927,11 @@ class KeyboardView(context: Context) : View(context) {
             // 1.2: phát qua AudioManager theo cờ của HKey — không phụ thuộc
             // "âm thanh chạm" hệ thống (bật trong app mà không kêu).
             // 1.4.0 (C5): âm lượng theo SOUND_VOLUME (0..100).
-            audio?.playSoundEffect(fx, soundVolume / 100f)
+            // 1.5.14: bọc try-catch cho môi trường test.
+            try {
+                audio?.playSoundEffect(fx, soundVolume / 100f)
+            } catch (_: Exception) { }
+        }
         }
         // 1.4.0 (C5): rung theo VIBRATE_STRENGTH ms qua VibrationEffect
         // thay KEYBOARD_TAP hệ thống (không điều chỉnh được cường độ).
@@ -941,11 +945,13 @@ class KeyboardView(context: Context) : View(context) {
                     )
                 )
             } catch (_: Exception) { }
-            @Suppress("DEPRECATION")
-            performHapticFeedback(
-                HapticFeedbackConstants.KEYBOARD_TAP,
-                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
-            )
+            try {
+                @Suppress("DEPRECATION")
+                performHapticFeedback(
+                    HapticFeedbackConstants.KEYBOARD_TAP,
+                    HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                )
+            } catch (_: Exception) { }
         }
     }
 

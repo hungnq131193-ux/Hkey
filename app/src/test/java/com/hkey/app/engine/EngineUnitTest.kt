@@ -382,6 +382,18 @@ class EngineUnitTest {
         assertEquals("pass", e.transform("pass"))
         assertEquals("test", e.transform("tesst"))
     }
+
+    @Test
+    fun learnedDoubledVowel_vietnamesePrioritized() {
+        // 1.5.12: "moon" đã học nhưng "môn" cũng là từ đã biết (từ điển) —
+        // ưu tiên tiếng Việt, gõ ra "môn". "book"->"bôk" ("bôk" không phải từ)
+        // thì giữ nguyên "book".
+        val e = TelexEngine(EngineOptions(
+            commonWord = { it in setOf("moon", "môn", "book") }
+        ))
+        assertEquals("môn", e.transform("moon"))
+        assertEquals("book", e.transform("book"))
+    }
 }
 
 /** 1.4.5: phím ở vị trí lệ thường — dấu thanh kẹt giữa cụm nguyên âm

@@ -29,8 +29,8 @@ android {
         applicationId = "com.hkey.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 37
-        versionName = "1.5.11"
+        versionCode = 39
+        versionName = "1.5.13"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

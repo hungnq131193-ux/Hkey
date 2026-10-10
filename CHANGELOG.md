@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.13 (versionCode 39)
+
+- Gộp phím VI/EN vào space: bỏ phím VI/EN riêng, vuốt space sang phải để
+  gõ Tiếng Việt, vuốt sang trái để gõ English. Giữ space để đổi IME (như cũ).
+  Phím space rộng hơn (5.1) và hiện mũi tên chỉ hướng vuốt.
+
+## 1.5.12 (versionCode 38)
+
+- Ưu tiên tiếng Việt khi gõ: "moon" đã học nhưng "môn" cũng là từ đã biết
+  (từ điển) thì gõ ra "môn", không giữ "moon". "book"->"bôk" ("bôk" không
+  phải từ) thì vẫn giữ nguyên "book" — chỉ bỏ cổng khi dạng gộp là từ thật.
+
 ## 1.5.11 (versionCode 37)
 
 - Sửa regression của 1.5.10: từ thật đã học chứa phím đúp (ss/ff) như

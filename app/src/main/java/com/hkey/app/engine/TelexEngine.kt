@@ -246,11 +246,13 @@ class TelexEngine(
      *  "usser"->"user". "address"->"ađres" có chữ Việt nên vẫn là từ thật.
      *  1.5.11: chỉ bỏ cổng khi dạng gộp cũng là từ đã biết ("tesst"->"test"
      *  đã học); "class"->"clas" ("clas" không phải từ) thì giữ nguyên "class".
+     *  1.5.12: mở rộng cho nguyên âm đúp (aa/ee/oo): "moon"->"môn" nếu "môn"
+     *  là từ đã biết; "book"->"bôk" ("bôk" không phải từ) thì giữ "book".
      *  Không dùng cache để tránh đọc nhầm kết quả cổng cũ. */
     private fun isTelexKeySequence(input: String): Boolean {
         val lower = input.lowercase()
         if ((1 until lower.length).none {
-                lower[it] == lower[it - 1] && lower[it] in "sfrxj"
+                lower[it] == lower[it - 1] && lower[it] in "sfrxjaeo"
             }
         ) return false
         val out = transformInternal(input, false)
@@ -259,8 +261,7 @@ class TelexEngine(
             !ViSyllable.isValid(out.lowercase(), strict = false)
         ) transformInternal(input, true) else out
         val merged = full.lowercase()
-        return merged != lower && merged.all { it.code < 128 } &&
-            opts.commonWord?.invoke(merged) == true
+        return merged != lower && opts.commonWord?.invoke(merged) == true
     }
 
     /** toneLiteral=true: phím dấu CUỐI được giữ làm chữ thường (đường spell-

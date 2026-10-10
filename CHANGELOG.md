@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.11 (versionCode 37)
+
+- Sửa regression của 1.5.10: từ thật đã học chứa phím đúp (ss/ff) như
+  "class", "off", "pass" bị gộp sai thành "clas", "of", "pas". Giờ chỉ bỏ
+  cổng "từ đã học" khi dạng gộp cũng là từ đã biết ("tesst"->"test" vì "test"
+  đã học từ các lần commit); "class"->"clas" ("clas" không phải từ) thì giữ
+  nguyên "class".
+
 ## 1.5.10 (versionCode 36)
 
 - Sửa "test" cứ thành "tesst", "user" thành "usser": "tesst"/"usser" lọt vào

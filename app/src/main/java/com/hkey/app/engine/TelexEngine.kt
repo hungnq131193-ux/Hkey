@@ -212,8 +212,8 @@ class TelexEngine(
         // thật mà là phím Telex gõ lặp (= chữ s thường) — bỏ cổng cho chúng.
         val lower = input.lowercase()
         if (!input.equals("dd", ignoreCase = true) &&
-            !isTelexKeySequence(input) &&
-            opts.commonWord?.invoke(lower) == true
+            opts.commonWord?.invoke(lower) == true &&
+            !isTelexKeySequence(input)
         ) {
             lastTransform = input to input
             return input
@@ -244,6 +244,8 @@ class TelexEngine(
     /** 1.5.10: chuỗi có phím dấu đúp (ss/ff/rr/xx/jj) mà transform gộp ra
      *  ASCII sạch thì là phím Telex, không phải từ — "tesst"->"test",
      *  "usser"->"user". "address"->"ađres" có chữ Việt nên vẫn là từ thật.
+     *  1.5.11: chỉ bỏ cổng khi dạng gộp cũng là từ đã biết ("tesst"->"test"
+     *  đã học); "class"->"clas" ("clas" không phải từ) thì giữ nguyên "class".
      *  Không dùng cache để tránh đọc nhầm kết quả cổng cũ. */
     private fun isTelexKeySequence(input: String): Boolean {
         val lower = input.lowercase()
@@ -256,7 +258,9 @@ class TelexEngine(
             isToneCommand(lower, input.length - 1) &&
             !ViSyllable.isValid(out.lowercase(), strict = false)
         ) transformInternal(input, true) else out
-        return full.all { it.code < 128 }
+        val merged = full.lowercase()
+        return merged != lower && merged.all { it.code < 128 } &&
+            opts.commonWord?.invoke(merged) == true
     }
 
     /** toneLiteral=true: phím dấu CUỐI được giữ làm chữ thường (đường spell-

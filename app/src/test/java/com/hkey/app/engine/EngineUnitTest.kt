@@ -356,16 +356,31 @@ class EngineUnitTest {
     @Test
     fun learnedDoubledKey_notKeptAsWord() {
         // 1.5.10: "tesst"/"usser" lọt vào dữ liệu học từ trước KHÔNG phải từ
-        // thật mà là phím Telex gõ lặp (= chữ s thường). Phím dấu đúp không
-        // bao giờ được cổng "từ đã học" giữ nguyên — phải gộp về "test"/"user".
+        // thật mà là phím Telex gõ lặp (= chữ s thường).
+        // 1.5.11: chỉ bỏ cổng khi dạng gộp cũng là từ đã biết — "test"/"user"
+        // được học từ các lần commit trước nên phải có trong tập từ.
         val e = TelexEngine(EngineOptions(
-            commonWord = { it in setOf("tesst", "usser", "max") }
+            commonWord = { it in setOf("tesst", "usser", "test", "user", "max") }
         ))
         assertEquals("test", e.transform("tesst"))
         assertEquals("user", e.transform("usser"))
         assertEquals("Test", e.transform("Tesst"))
         // Từ thật đã học vẫn được giữ nguyên, không bẻ thành "mã".
         assertEquals("max", e.transform("max"))
+    }
+
+    @Test
+    fun learnedDoubledKey_realWordKept() {
+        // 1.5.11: "class"/"off"/"pass" là từ thật đã học (có ss/ff) — KHÔNG
+        // được gộp thành "clas"/"of"/"pas". Chỉ "tesst" (dạng gộp "test" đã
+        // biết) mới được bỏ cổng.
+        val e = TelexEngine(EngineOptions(
+            commonWord = { it in setOf("class", "off", "pass", "tesst", "test") }
+        ))
+        assertEquals("class", e.transform("class"))
+        assertEquals("off", e.transform("off"))
+        assertEquals("pass", e.transform("pass"))
+        assertEquals("test", e.transform("tesst"))
     }
 }
 

@@ -530,7 +530,9 @@ class Report156Test {
         qp.pump(); hp.idle()
         assertEquals("nfuwowif ", hp.text())
         val he = harness(qp, initialText = "ok ")
-        he.ime.dispatchKey(com.hkey.app.ui.KbKey("fn:lang"))
+        // Chuyển sang English mode (vuốt space trái) qua reflection
+        HKeyIME::class.java.getDeclaredMethod("toggleLang")
+            .apply { isAccessible = true }.invoke(he.ime)
         he.type("nfuwowif ")
         qp.pump(); he.idle()
         assertEquals("ok nfuwowif ", he.text())

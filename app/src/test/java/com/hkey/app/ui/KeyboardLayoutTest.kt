@@ -25,20 +25,20 @@ class KeyboardLayoutTest {
     fun lettersHasCoreKeys() {
         val keys = allKeys(KbLayouts.letters(false))
         val tags = keys.map { it.tag }
-        for (t in listOf("fn:shift", "fn:del", "fn:space", "fn:enter", "fn:lang", "fn:sym")) {
+        for (t in listOf("fn:shift", "fn:del", "fn:space", "fn:enter", "fn:sym")) {
             assertTrue("thiếu $t", t in tags)
         }
         // 26 chữ cái
         assertEquals(26, tags.count { it.startsWith("ch:") })
-        // space vuốt được + rộng ~4.0 sau khi gộp emoji vào phím ,
+        // space vuốt được (đổi VI/EN) + rộng 5.1 sau khi gộp phím lang
         assertTrue(keys.first { it.tag == "fn:space" }.swipe)
-        assertEquals(4.0f, keys.first { it.tag == "fn:space" }.w, 0.001f)
+        assertEquals(5.1f, keys.first { it.tag == "fn:space" }.w, 0.001f)
         assertTrue(keys.first { it.tag == "fn:del" }.repeat)
-        // giữ phím , -> trang emoji (kèm icon mini 😊); giữ VI/EN -> đổi IME
+        // giữ phím , -> trang emoji (kèm icon mini 😊); giữ space -> đổi IME
         assertFalse("fn:emoji không còn là phím riêng", "fn:emoji" in tags)
         assertEquals("fn:emoji", keys.first { it.tag == "p:," }.longTag)
         assertEquals("😊", keys.first { it.tag == "p:," }.mini)
-        assertEquals("fn:ime", keys.first { it.tag == "fn:lang" }.longTag)
+        assertEquals("fn:ime", keys.first { it.tag == "fn:space" }.longTag)
     }
 
     @Test

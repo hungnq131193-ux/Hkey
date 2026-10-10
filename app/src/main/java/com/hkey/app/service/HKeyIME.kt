@@ -801,7 +801,14 @@ class HKeyIME : InputMethodService() {
             shifted = shiftOn
             capsLocked = shiftLocked
             onKey = { dispatchKey(it) }
-            onSpaceSwipe = { if (optSpaceSwipe) swipeCursor(it) }
+            onSpaceSwipe = { dir ->
+                // Vuốt space: phải (+1) -> Tiếng Việt, trái (-1) -> English.
+                // Chỉ đổi khi khác mode hiện tại (tránh toggle liên tục).
+                if (optSpaceSwipe) {
+                    val wantVi = dir > 0
+                    if (wantVi != vietMode) toggleLang()
+                }
+            }
             onRecentEmoji = { list ->
                 prefs.edit()
                     .putString(SettingsKeys.RECENT_EMOJI, list.joinToString("\n")).apply()
@@ -859,7 +866,6 @@ class HKeyIME : InputMethodService() {
                 requestSuggestions()
                 kbView?.showPage(KeyboardView.Page.EMOJI)
             }
-            k.tag == "fn:lang" -> toggleLang()
             k.tag == "fn:ime" -> { // 3.x; 1.2: không có IME kế -> mở bảng chọn
                 // switchToNextInputMethod cần API 28+
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P ||
@@ -877,32 +883,6 @@ class HKeyIME : InputMethodService() {
      *  1.2: dùng setSelection thay cho phím DPAD — DPAD_RIGHT ở cuối ô (hoặc
      *  LEFT ở đầu ô) khiến app chuyển focus sang view khác và BÀN PHÍM BỊ ẨN
      *  (lỗi "thi thoảng bấm space thì mất bàn phím"). */
-    private fun swipeCursor(dir: Int) {
-        if (currentComposingWord.isNotEmpty()) commitComposing()
-        val ic = currentInputConnection ?: return
-        val pos = currentCursor(ic, dir)
-        if (pos < 0) return // không biết vị trí -> bỏ qua, tuyệt đối không gửi DPAD
-        var step = 0
-        if (selStart >= 0 && selEnd >= 0 && selStart != selEnd) {
-            step = 0 // đang bôi chọn: vuốt chỉ thu vùng chọn về một đầu
-        } else if (dir > 0) {
-            val after = ic.getTextAfterCursor(256, 0) ?: return
-            if (after.isEmpty()) return // đã ở cuối ô
-            step = firstGraphemeLength(after.toString())
-        } else {
-            if (pos <= 0) return // đã ở đầu ô
-            val before = ic.getTextBeforeCursor(256, 0) ?: return
-            if (before.isEmpty()) return
-            step = -lastGraphemeLength(before.toString())
-        }
-        val np = (pos + step).coerceAtLeast(0)
-        ic.setSelection(np, np)
-        noteCursor(np)
-        contextCache = null
-        tailTracker.invalidate() // con trỏ dời khỏi vùng đã biết
-        updateAutoShift()
-    }
-
     /** Vị trí con trỏ (đầu dời): hỏi app qua ExtractedText (đồng bộ, luôn
      *  đúng kể cả khi onUpdateSelection chưa tới), không được thì dùng vùng
      *  chọn đã theo dõi. -1 = không xác định được. */

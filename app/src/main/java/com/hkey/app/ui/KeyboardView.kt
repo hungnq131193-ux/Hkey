@@ -38,7 +38,7 @@ class KbKey(
     val alts: String = "",
     val longTag: String? = null, // nhấn giữ -> bắn phím khác (vd giữ VI -> đổi IME)
     val repeat: Boolean = false, // ⌫ giữ là xóa liên tục
-    val swipe: Boolean = false,  // space: vuốt ngang = dời con trỏ
+    val swipe: Boolean = false,  // space: vuốt ngang = đổi VI/EN (trái=EN, phải=VI)
     val mini: String? = null,    // icon nhỏ góc phải-trên (vd 😊 trên phím ,)
     val hint: Boolean = false    // 1.2: hiện ký tự phụ đầu tiên mờ ở góc (số trên hàng q..p)
 )
@@ -64,8 +64,7 @@ object KbLayouts {
                 KbField.EMAIL -> KbKey("p:@", "@", longTag = "fn:emoji", mini = "😊")
                 KbField.TEXT -> KbKey("p:,", ",", longTag = "fn:emoji", mini = "😊")
             },
-            KbKey("fn:lang", "VI", 1.1f, func = true, longTag = "fn:ime"), // giữ -> đổi IME
-            KbKey("fn:space", "HKey", 4.0f, swipe = true),
+            KbKey("fn:space", "HKey", 5.1f, swipe = true, longTag = "fn:ime"),
             p(".", "?!,:;/'\""),
             KbKey("fn:enter", "↵", 1.5f, func = true)
         )
@@ -522,7 +521,6 @@ class KeyboardView(context: Context) : View(context) {
     private fun upperCase() = shifted || capsLocked
 
     private fun labelOf(k: KbKey): String = when {
-        k.label != null && k.tag == "fn:lang" -> if (langVi) "VI" else "EN"
         k.label != null -> k.label
         k.tag.startsWith("ch:") -> {
             val c = k.tag.removePrefix("ch:")
@@ -648,7 +646,6 @@ class KeyboardView(context: Context) : View(context) {
         val fg = when {
             isEnter -> palette.onAccent
             k.tag == "fn:shift" && upperCase() -> palette.accent
-            k.tag == "fn:lang" -> palette.accent
             k.func -> palette.funcText
             else -> palette.text
         }
@@ -660,7 +657,7 @@ class KeyboardView(context: Context) : View(context) {
             "fn:space" -> {
                 txtPaint.typeface = Typeface.DEFAULT
                 txtPaint.color = palette.dim
-                val label = if (langVi) "HKey · Tiếng Việt" else "HKey · English"
+                val label = if (langVi) "← HKey · Tiếng Việt" else "HKey · English →"
                 val maxW = a.draw.width() - 8 * density
                 var ts = 13 * density
                 txtPaint.textSize = ts
@@ -678,7 +675,6 @@ class KeyboardView(context: Context) : View(context) {
         txtPaint.typeface = if (k.func) fnTypeface else Typeface.DEFAULT
         txtPaint.textSize = density * when {
             isTab -> 19f
-            k.tag == "fn:lang" -> 14f
             k.tag == "fn:paste" -> 18f
             k.func -> 14.5f
             k.tag.startsWith("tx:") -> 22f
@@ -1264,7 +1260,7 @@ class KeyboardView(context: Context) : View(context) {
         "fn:shift" to "viết hoa", "fn:del" to "xóa", "fn:space" to "khoảng trắng",
         "fn:enter" to "xuống dòng", "fn:sym" to "bảng ký tự", "fn:abc" to "bảng chữ",
         "fn:sym2" to "ký hiệu khác",
-        "fn:lang" to "đổi tiếng Việt Anh", "fn:emoji" to "biểu tượng",
+        "fn:emoji" to "biểu tượng",
         "fn:paste" to "dán", "p:." to "chấm", "p:," to "phẩy", "p:?" to "chấm hỏi",
         "p:!" to "chấm than", "p:@" to "a còng", "p:/" to "gạch chéo", "p:\\" to "gạch chéo ngược",
         "fn:ecat:0" to "emoji gần đây", "fn:ecat:1" to "mặt cười", "fn:ecat:2" to "cử chỉ",

@@ -59,7 +59,9 @@ object TextContext {
     /** Con trỏ đứng ở đầu câu? true khi: ô trống / app không trả text / sau
      *  xuống dòng / sau ".!?…" + khoảng trắng (qua ngoặc, nháy đóng). */
     fun sentenceBoundary(before: CharSequence?): Boolean {
-        if (before == null) return true
+        // 1.5.15: không đọc được text trước con trỏ -> KHÔNG tự hoa (trước
+        // đây null -> true làm app không trả text bị hoa mọi từ + gợi ý).
+        if (before == null) return false
         var i = before.length
         var sawWs = false
         while (i > 0 && before[i - 1].isWhitespace()) {

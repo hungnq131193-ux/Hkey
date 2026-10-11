@@ -63,7 +63,7 @@ class TextContextTest {
 
     @Test
     fun sentenceBoundaryNeedsSpaceAfterPunct() {
-        assertTrue(TextContext.sentenceBoundary(null))
+        assertFalse(TextContext.sentenceBoundary(null))
         assertTrue(TextContext.sentenceBoundary(""))
         assertTrue(TextContext.sentenceBoundary("   "))
         assertTrue(TextContext.sentenceBoundary("xin chào. "))

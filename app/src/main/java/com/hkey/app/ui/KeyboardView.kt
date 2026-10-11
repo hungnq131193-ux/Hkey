@@ -934,28 +934,33 @@ class KeyboardView(context: Context) : View(context) {
         }
         // 1.4.0 (C5): rung theo VIBRATE_STRENGTH ms qua VibrationEffect
         // thay KEYBOARD_TAP hệ thống (không điều chỉnh được cường độ).
-        // 1.5.14: thử cả hai — VibrationEffect trực tiếp + haptic feedback
-        // (một số máy chỉ nhận một trong hai).
+        // 1.5.15: haptic hệ thống chỉ là dự phòng khi không có Vibrator —
+        // gọi cả hai làm rung đôi và bỏ qua cường độ user chọn.
         if (vibrateEnabled && hapticMs > 0) {
-            try {
-                vibrator?.vibrate(
-                    VibrationEffect.createOneShot(
-                        hapticMs.toLong(), VibrationEffect.DEFAULT_AMPLITUDE
+            val vib = vibrator?.takeIf { it.hasVibrator() }
+            if (vib != null) {
+                try {
+                    vib.vibrate(
+                        VibrationEffect.createOneShot(
+                            hapticMs.toLong(), VibrationEffect.DEFAULT_AMPLITUDE
+                        )
                     )
-                )
-            } catch (_: Exception) { }
-            try {
+                } catch (_: Exception) { }
+            } else {
                 @Suppress("DEPRECATION")
                 performHapticFeedback(
                     HapticFeedbackConstants.KEYBOARD_TAP,
                     HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
                 )
-            } catch (_: Exception) { }
+            }
         }
     }
 
-    private fun feed(k: KbKey) {
-        click(k)
+    /** fx=false: phản hồi đã phát lúc chạm xuống (1.5.15) — không kêu lại. */
+    private val clickedDown = HashSet<Int>()
+
+    private fun feed(k: KbKey, fx: Boolean = true) {
+        if (fx) click(k)
         if (k.tag.startsWith("fn:ecat:")) { // tab nhóm emoji: xử lý tại chỗ
             setEmojiCategory(k.tag.removePrefix("fn:ecat:").toIntOrNull() ?: 1)
             return
@@ -1088,13 +1093,16 @@ class KeyboardView(context: Context) : View(context) {
                     if (flushed.isNotEmpty()) {
                         handler.removeCallbacks(longPress)
                         hidePreview()
-                        for (fk in flushed) feed(fk)
+                        for (fk in flushed) feed(fk, fx = false)
                     }
                 }
                 // Repeat: bắn ngay + consumed luôn (nhả không bắn lại — sửa
                 // xoá đúp) + nạp lịch lặp.
+                // 1.5.15: rung/âm ngay lúc CHẠM cho mọi phím (phím thường chỉ
+                // gửi ký tự lúc nhả — trước đây feedback cũng trễ tới lúc nhả).
+                if (!a.scroll) { click(k); clickedDown += pid }
                 if (touch.down(pid, k, x, e.eventTime)) {
-                    feed(k)
+                    feed(k, fx = a.scroll)
                     handler.removeCallbacks(repeater)
                     handler.postDelayed(repeater, touch.repeatFirstMs)
                 }
@@ -1182,11 +1190,12 @@ class KeyboardView(context: Context) : View(context) {
                 gridScrolling -= pid
                 gridStartY.remove(pid)
                 val up = touch.up(pid)
+                val clicked = clickedDown.remove(pid)
                 if (lpPid == pid) handler.removeCallbacks(longPress)
                 if (up.stopRepeat) handler.removeCallbacks(repeater)
                 val hadAlt = altOwner == pid
                 if (up.fire != null) {
-                    feed(up.fire)
+                    feed(up.fire, fx = !clicked)
                 } else if (hadAlt) {
                     commitAlt(pid)
                 }
@@ -1205,6 +1214,7 @@ class KeyboardView(context: Context) : View(context) {
                 }
             }
             MotionEvent.ACTION_CANCEL -> {
+                clickedDown.clear()
                 clearTouch()
                 invalidate()
             }

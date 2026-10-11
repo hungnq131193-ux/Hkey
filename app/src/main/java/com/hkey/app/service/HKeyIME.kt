@@ -714,8 +714,8 @@ class HKeyIME : InputMethodService() {
         val flags = currentInputType and InputType.TYPE_MASK_FLAGS
         return when {
             flags and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS != 0 -> true
-            flags and InputType.TYPE_TEXT_FLAG_CAP_WORDS != 0 ->
-                t.isNullOrEmpty() || t.last().isWhitespace()
+            // 1.5.15: CAP_WORDS không còn hoa mọi từ — chỉ hoa đầu ô / sau
+            // dấu kết câu như CAP_SENTENCES (hoa từng từ làm gợi ý hoa sai).
             // CAP_SENTENCES hoặc ô không đặt cờ: tự soi ranh giới câu
             else -> TextContext.sentenceBoundary(t)
         }

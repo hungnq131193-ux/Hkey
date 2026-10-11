@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.15 (versionCode 41)
+
+- Sửa rung đôi mỗi phím: chỉ dùng VibrationEffect theo đúng cường độ đã
+  chọn; haptic hệ thống chỉ còn là dự phòng khi máy không có Vibrator
+  (1.5.14 gọi cả hai nên vừa rung đôi vừa bỏ qua cường độ).
+- Rung/âm thanh phím phát ngay lúc chạm xuống cho mọi phím (trước chỉ
+  kêu lúc nhả tay — cảm giác trễ). Ký tự vẫn gửi lúc nhả như cũ.
+- Gợi ý không còn tự viết hoa mọi từ: ô CAP_WORDS và ô không đọc được
+  chữ trước con trỏ giờ chỉ hoa ở đầu ô hoặc sau dấu kết câu (. ! ?,
+  xuống dòng).
+
 ## 1.5.14 (versionCode 40)
 
 - Gõ đ kiểu "nhớ muộn": phím 'd' cho đ không cần kề D đầu nữa — "Dadx" ra
@@ -8,9 +19,8 @@
   "đâ" không phải âm tiết hoàn chỉnh; từ đã học vẫn được giữ nguyên).
 - Sửa rung phím không hoạt động: lấy Vibrator lười (tránh null lúc khởi tạo)
   và thử cả VibrationEffect trực tiếp lẫn haptic feedback hệ thống.
-- Sửa rung/âm thanh phím chỉ kêu với phím lặp (giữ ⌫): `feed()` giờ gọi cho
-  mọi phím bấm, không chỉ khi `touch.down()` trả true (phím thường trước đây
-  bị mất feedback).
+- Sửa rung/âm thanh phím: bổ sung phát haptic hệ thống khi Vibrator không
+  dùng được. (Phím thường vẫn phát lúc nhả tay — đã sửa ở 1.5.15.)
 
 ## 1.5.13 (versionCode 39)
 

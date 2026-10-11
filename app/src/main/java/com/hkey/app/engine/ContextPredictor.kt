@@ -575,8 +575,11 @@ class ContextPredictor {
         }
     }
 
-    /** Kiểu hoa đã học của từ (nếu user hay gõ khác lower); fallback nguyên. */
-    fun displayOf(w: String): String = vocabulary[w]?.cased ?: w
+    /** Kiểu hoa đã học của từ (nếu user hay gõ khác lower); fallback nguyên.
+     *  1.5.16: bỏ dạng chỉ hoa chữ đầu ("Hôm") — gần như luôn là hoa đầu câu
+     *  học nhầm; hoa đầu câu do IME tự áp (matchCase/shift). Giữ "iPhone". */
+    fun displayOf(w: String): String = vocabulary[w]?.cased
+        ?.takeIf { it != w.replaceFirstChar(Char::uppercaseChar) } ?: w
 
     private fun buildFlatNgrams(
         bigrams: Map<String, Map<String, Int>>,

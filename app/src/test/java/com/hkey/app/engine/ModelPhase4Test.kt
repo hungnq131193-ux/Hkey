@@ -90,6 +90,16 @@ class ModelPhase4Test {
     }
 
     @Test
+    fun sentenceStartCapitalNotSuggestedMidSentence() {
+        val p = ContextPredictor()
+        // 1.5.16: "Hôm" gõ hoa đầu câu không được gợi ý hoa giữa câu
+        p.recordSequence("", "Hôm")
+        p.recordSequence("", "Hôm")
+        assertEquals("hôm", p.displayOf("hôm"))
+        assertTrue(p.completions("hô").none { it.first().isUpperCase() })
+    }
+
+    @Test
     fun typoNotLearned() {
         val p = ContextPredictor()
         // "xin" có sẵn trong vocab; "xjn" cách 1 ký tự, không phải âm tiết VN

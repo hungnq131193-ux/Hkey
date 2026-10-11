@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.16 (versionCode 42)
+
+- Sửa gợi ý viết hoa giữa câu: từ từng gõ hoa đầu câu ("Hôm", "Mình")
+  bị học kiểu hoa và gợi ý hoa mãi. Giờ bỏ kiểu chỉ-hoa-chữ-đầu khi gợi ý;
+  hoa đầu ô/sau dấu chấm vẫn do bàn phím tự áp. Giữ kiểu như "iPhone".
+- Hoàn tác thay đổi rung/âm của 1.5.15 (làm mất rung và âm trên máy
+  thật) — trở về đúng hành vi 1.5.14.
+
 ## 1.5.15 (versionCode 41)
 
 - Sửa rung đôi mỗi phím: chỉ dùng VibrationEffect theo đúng cường độ đã

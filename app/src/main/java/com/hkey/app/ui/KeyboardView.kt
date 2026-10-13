@@ -55,6 +55,16 @@ object KbLayouts {
     private fun p(c: String, alts: String = "") = KbKey("p:$c", c, alts = alts)
     private fun del(w: Float = 1.5f) = KbKey("fn:del", "⌫", w, func = true, repeat = true)
 
+    fun numbers(inputType: Int): List<KbRow> =
+        (1..9).chunked(3).map { digits -> KbRow(digits.map { p(it.toString()) }) } +
+            KbRow(buildList {
+                add(del(1f))
+                if (inputType and android.text.InputType.TYPE_NUMBER_FLAG_SIGNED != 0) add(p("-"))
+                add(p("0"))
+                if (inputType and android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL != 0) add(p("."))
+                add(KbKey("fn:enter", "↵", func = true))
+            })
+
     private fun bottom(modeTag: String, modeLabel: String, field: KbField) = KbRow(
         listOf(
             KbKey(modeTag, modeLabel, 1.2f, func = true),
@@ -268,7 +278,9 @@ class KeyboardView(context: Context) : View(context) {
 
     var recentEmoji: List<String> = emptyList()
 
-    enum class Page { LETTERS, SYMBOLS, SYMBOLS2, EMOJI }
+    var numericInputType = 0
+
+    enum class Page { LETTERS, SYMBOLS, SYMBOLS2, EMOJI, NUMBERS }
     var page = Page.LETTERS
         private set
     private var emojiCat = 1
@@ -395,6 +407,7 @@ class KeyboardView(context: Context) : View(context) {
         Page.SYMBOLS -> KbLayouts.symbols(fieldKind)
         Page.SYMBOLS2 -> KbLayouts.symbols2(fieldKind)
         Page.EMOJI -> KbLayouts.emoji(emojiCat, recentEmoji)
+        Page.NUMBERS -> KbLayouts.numbers(numericInputType)
     }
 
     private fun setEmojiCategory(cat: Int) {

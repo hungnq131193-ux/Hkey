@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.18 (versionCode 44)
+
+- Sửa chuỗi Telex rõ ràng bị dữ liệu đã học giữ thành chữ thô: `dduwow`
+  hiện `đươ`, gõ tiếp `cj` thành `được`, không cần xóa dữ liệu học.
+- Ô nhập số tự hiện bàn phím số lớn dạng 123 / 456 / 789 / 0. Chỉ hiện
+  dấu âm và dấu thập phân khi ô cho phép; quay về ô chữ thì hiện bàn phím chữ.
+- Giữ đúng bàn phím số khi giao diện được tạo lại sau thay đổi cài đặt.
+
 ## 1.5.17 (versionCode 43)
 
 - Gõ tiếng Việt được trong thanh địa chỉ trình duyệt: Chrome đánh dấu ô

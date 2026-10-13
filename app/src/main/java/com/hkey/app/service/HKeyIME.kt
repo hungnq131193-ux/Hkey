@@ -498,6 +498,7 @@ class HKeyIME : InputMethodService() {
             setInputView(onCreateInputView())
             kbView?.showPage(startPage(info.inputType))
         } else {
+            kbView?.numericInputType = info.inputType
             kbView?.fieldKind = currentField
             kbView?.showPage(startPage(info.inputType))
             updateSuggestions()
@@ -520,8 +521,8 @@ class HKeyIME : InputMethodService() {
     /** 1.2: ô số/điện thoại/ngày giờ mở thẳng trang số-ký hiệu. */
     private fun startPage(inputType: Int): KeyboardView.Page =
         when (inputType and InputType.TYPE_MASK_CLASS) {
-            InputType.TYPE_CLASS_NUMBER, InputType.TYPE_CLASS_PHONE,
-            InputType.TYPE_CLASS_DATETIME -> KeyboardView.Page.SYMBOLS
+            InputType.TYPE_CLASS_NUMBER -> KeyboardView.Page.NUMBERS
+            InputType.TYPE_CLASS_PHONE, InputType.TYPE_CLASS_DATETIME -> KeyboardView.Page.SYMBOLS
             else -> KeyboardView.Page.LETTERS
         }
 
@@ -788,10 +789,12 @@ class HKeyIME : InputMethodService() {
         // không đổi dù đã bật/tắt trong cài đặt.
         appliedNumRow = prefs.getBoolean(SettingsKeys.NUMBER_ROW, false)
         val kb = KeyboardView(this).apply {
+            numericInputType = currentInputType
             fieldKind = currentField
             recentEmoji = (prefs.getString(SettingsKeys.RECENT_EMOJI, "") ?: "")
                 .split('\n').filter { it.isNotEmpty() }
             configure(kh, ks, currentPalette(), appliedNumRow, currentCornerDp())
+            showPage(startPage(currentInputType))
             soundEnabled = optSound
             vibrateEnabled = optVibrate
             hapticMs = optVibrateMs

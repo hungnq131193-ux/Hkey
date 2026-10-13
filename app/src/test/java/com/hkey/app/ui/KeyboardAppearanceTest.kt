@@ -117,6 +117,8 @@ class KeyboardAppearanceTest {
         render(KbPalette.LIGHT, KeyboardView.Page.LETTERS, 320, "letters-light-320.png")
         render(KbPalette.LIGHT, KeyboardView.Page.LETTERS, 360, "letters-light-360.png")
         render(KbPalette.DARK, KeyboardView.Page.SYMBOLS, 360, "symbols-dark-360.png")
+        render(KbPalette.DARK, KeyboardView.Page.NUMBERS, 360, "numbers-dark-360.png")
+        render(KbPalette.LIGHT, KeyboardView.Page.NUMBERS, 320, "numbers-light-320.png")
         render(KbPalette.DARK, KeyboardView.Page.EMOJI, 360, "emoji-dark-360.png")
         render(KbPalette.LIGHT, KeyboardView.Page.EMOJI, 320, "emoji-light-320.png")
     }

@@ -278,11 +278,14 @@ class TelexEngine(
      *  Không dùng cache để tránh đọc nhầm kết quả cổng cũ. */
     private fun isTelexKeySequence(input: String): Boolean {
         val lower = input.lowercase()
-        if ((1 until lower.length).none {
+        val explicitVietnamese = lower.contains("uwow") ||
+            (lower.startsWith("dd") && !lower.startsWith("ddd"))
+        if (!explicitVietnamese && (1 until lower.length).none {
                 lower[it] == lower[it - 1] && lower[it] in "sfrxjaeo"
             }
         ) return false
         val out = transformInternal(input, false)
+        if (explicitVietnamese && ViSyllable.isValid(out.lowercase(), strict = false)) return true
         val full = if (opts.spellCheckTone && input.length >= 2 &&
             isToneCommand(lower, input.length - 1) &&
             !ViSyllable.isValid(out.lowercase(), strict = false)

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.17 (versionCode 43)
+
+- Gõ tiếng Việt được trong thanh địa chỉ trình duyệt: Chrome đánh dấu ô
+  này là URI chỉ để chặn auto-correct, nhưng 1.5.16 xếp vào ô "thô" nên
+  Telex tắt luôn. Giờ ô URI vẫn Telex bình thường, chỉ tắt gợi ý/sửa/học
+  (ô email/mật khẩu giữ nguyên chế độ thô).
+- Lưu ý: URL chứa chuỗi trùng phím dấu Telex (vd `maps`→`máp`) bị biến
+  như mọi ô thường — bấm `z` để hoàn dấu trước khi xuống từ.
+
 ## 1.5.16 (versionCode 42)
 
 - Sửa gợi ý viết hoa giữa câu: từ từng gõ hoa đầu câu ("Hôm", "Mình")

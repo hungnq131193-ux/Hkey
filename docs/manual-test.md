@@ -26,7 +26,11 @@ Chạy sau mỗi giai đoạn, trước khi chuyển giai đoạn tiếp theo.
   `mono`, `delete`, `banana`.
 
 ## Ô nhạy cảm (kiểm tra B1 — đúng từ Giai đoạn 2.1)
-- Thanh địa chỉ trình duyệt: `www.example.com/pass` — phải ra nguyên văn.
+- Thanh địa chỉ trình duyệt (1.5.17): gõ tiếng Việt được (`nhaf`→`nhà`,
+  `dduwowngf`→`đường`); URL không chứa phím dấu Telex ra nguyên văn
+  (`google.com`, `vnexpress.net`). URL chứa chuỗi trùng phím dấu
+  (`maps`→`máp`) bị biến như mọi ô thường — bấm `z` hoàn dấu trước khi
+  xuống từ; không hiện thanh gợi ý.
 - Ô mật khẩu: `Pass123` — không bị đổi ký tự, không có gợi ý.
 - Ô email: `ten.ho@mail.com`.
 

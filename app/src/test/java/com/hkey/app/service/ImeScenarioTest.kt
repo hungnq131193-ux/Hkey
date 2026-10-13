@@ -67,6 +67,20 @@ class ImeScenarioTest {
         assertEquals("ok ", h.text())
     }
 
+    /** Ô URI (thanh địa chỉ Chrome): Telex gõ tiếng Việt bình thường —
+     *  1.5.16 xếp URI vào raw nên chỉ in ASCII trơn ("mất tiếng Việt"). */
+    @Test
+    fun uriFieldTypesVietnamese() {
+        val h = ImeHarness(
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        )
+        h.type("vieetj")
+        assertEquals("việt", h.composing())
+        h.type(" ")
+        h.type("nhaf ddi")
+        assertEquals("ok việt nhà đi", h.text())
+    }
+
     /** Ô TYPE_NULL (terminal/app không báo text): chữ vẫn đi qua commitText,
      *  ⌫/Enter gửi phím cứng thật thay vì deleteSurroundingText. */
     @Test

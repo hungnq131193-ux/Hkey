@@ -23,7 +23,6 @@ class RawModeConfirmTest {
         assertTrue(FieldMode.isRaw(text(InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)))
         assertTrue(FieldMode.isRaw(text(InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)))
         assertTrue(FieldMode.isRaw(text(InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS)))
-        assertTrue(FieldMode.isRaw(text(InputType.TYPE_TEXT_VARIATION_URI)))
         assertTrue(FieldMode.isRaw(InputType.TYPE_CLASS_NUMBER))
         assertTrue(FieldMode.isRaw(InputType.TYPE_CLASS_PHONE))
         assertTrue(FieldMode.isRaw(InputType.TYPE_CLASS_DATETIME))
@@ -36,6 +35,14 @@ class RawModeConfirmTest {
         assertTrue(FieldMode.noSuggestions(text(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)))
         assertFalse(FieldMode.noSuggestions(InputType.TYPE_CLASS_TEXT))
         assertFalse(FieldMode.noSuggestions(text(InputType.TYPE_TEXT_VARIATION_NORMAL)))
+    }
+
+    @Test
+    fun uriFieldsAllowTelexButNoSuggestions() {
+        // 1.5.17: ô URI (thanh địa chỉ Chrome báo VARIATION_URI) không raw —
+        // Telex gõ được tiếng Việt, chỉ tắt gợi ý/sửa/học.
+        assertFalse(FieldMode.isRaw(text(InputType.TYPE_TEXT_VARIATION_URI)))
+        assertTrue(FieldMode.noSuggestions(text(InputType.TYPE_TEXT_VARIATION_URI)))
     }
 
     @Test

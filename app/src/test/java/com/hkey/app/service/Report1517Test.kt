@@ -106,4 +106,62 @@ class Report1517Test {
         )
         assertFalse(listOf(c.c1, c.c2, c.c3).contains("deeepseek"))
     }
+
+    @Test fun doubleWEscapeDoesNotRevertToTwoWs() {
+        val h = ImeHarness()
+        val expected = listOf("ư", "w", "we", "wee", "week")
+        "wweek".forEachIndexed { i, c ->
+            h.type(c.toString())
+            h.idle()
+            assertEquals("prefix ${"wweek".take(i + 1)}", expected[i], h.composing())
+        }
+        h.type(" ")
+        h.idle()
+        assertTrue(h.text().endsWith("week "))
+
+        val engine = com.hkey.app.engine.TelexEngine()
+        assertEquals("window", engine.transform("wwindow"))
+        assertEquals("lowercase", engine.transform("lowwercase"))
+        assertEquals("showroom", engine.transform("showwroom"))
+        assertEquals("powerful", engine.transform("powwerful"))
+    }
+
+    @Test fun clearingLearnedDataResetsCommonFreqsAndLearnedCountCountsOnlyWords() {
+        HKeyIME.workerPosterOverride = Runnable::run
+        try {
+            val h = ImeHarness()
+            h.idle()
+            val accept = HKeyIME::class.java.getDeclaredMethod("acceptSuggestion", String::class.java)
+                .apply { isAccessible = true }
+            // Gõ "max" rồi chọn ứng viên raw "max" để học từ và đưa vào commonFreqs
+            h.type("max")
+            h.idle()
+            accept.invoke(h.ime, "max")
+            h.idle()
+            h.type("max")
+            h.idle()
+            assertEquals("max", h.composing())
+            h.type(" ")
+            h.idle()
+
+            val app = h.ime.application
+            val vm = com.hkey.app.settings.SettingsViewModel(app)
+            val f = java.io.File(app.filesDir, "learned_data.tsv")
+            f.writeText("hkey-learned-v2\nw\tmax\t3\t1000\nb\ttôi\tmax\t2\nt\ta\tb\tmax\t1\n")
+            assertEquals(1, vm.learnedCount())
+
+            vm.clearLearning()
+            assertEquals(0, vm.learnedCount())
+
+            val text = EditorInfo().apply { inputType = InputType.TYPE_CLASS_TEXT }
+            h.ime.onStartInputView(text, false)
+            h.idle()
+            h.type("max")
+            h.idle()
+            assertEquals("mã", h.composing())
+        } finally {
+            HKeyIME.workerPosterOverride = null
+        }
+    }
 }
+

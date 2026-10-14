@@ -60,10 +60,12 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun set(key: String, v: Int) = repo.set(key, v)
     fun set(key: String, v: String?) = repo.set(key, v)
 
-    /** Số từ đã học — đọc nhanh (đếm dòng file), UI gọi trên IO dispatcher. */
+    /** Số từ đã học — đọc nhanh (chỉ đếm dòng từ "w\t"), UI gọi trên IO dispatcher. */
     fun learnedCount(): Int {
         val f = java.io.File(getApplication<Application>().filesDir, "learned_data.tsv")
-        return try { if (f.exists()) f.readLines().size else 0 } catch (e: Exception) { 0 }
+        return try {
+            if (f.exists()) f.useLines { lines -> lines.count { it.startsWith("w\t") } } else 0
+        } catch (e: Exception) { 0 }
     }
 
     /** Xoá file học + cờ để IME đang chạy dọn bộ nhớ (giữ hành vi 1.3.x). */

@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.20 (versionCode 46)
+
+- Sửa lỗi hủy phím `ww` (`ư`/`ơ`/`ă` → `w`) rồi gõ tiếp từ không phải âm tiết
+  tiếng Việt bị trả ngược về `ww`: gõ `wweek`, `wwindow`, `lowwercase`,
+  `showwroom`, `powwerful` giờ hiển thị và chốt đúng `week`, `window`,
+  `lowercase`, `showroom`, `powerful`; tự dọn các từ học nhầm chứa `ww`.
+- Sửa nút "Xóa dữ liệu đã học": làm mới ngay tập từ quen (`commonFreqs`) và
+  bộ nhớ đệm Telex trong phiên đang chạy mà không cần khởi động lại bàn phím;
+  bộ đếm số từ đã học trong Cài đặt chỉ đếm đúng dòng từ (`w\t`) thay vì đếm
+  cả dòng tiêu đề, bigram và trigram.
+- Sửa `promoteLateD` trong Telex không xử lý nhầm từ đã mở đầu bằng `dd` hoặc
+  cụm `dd` giữa từ, đồng thời lưu kết quả vào bộ nhớ đệm biến đổi.
+- Tối ưu tốc độ gợi ý và phân tích âm tiết: hợp nhất bảng ký tự về `ViGlyphs`,
+  thay tạo chuỗi qua `List<Char>` bằng `CharArray` trực tiếp, và bỏ kiểm tra
+  dấu thừa khi tiền tố gõ là chữ ASCII không dấu.
+
 ## 1.5.19 (versionCode 45)
 
 - Sửa lỗi gõ từ có cụm hủy lặp 3 phím Telex (`eee`/`aaa`/`ooo`/`ddd`) kèm

@@ -28,15 +28,6 @@ class ContextPredictor {
 
     var weights = Weights()
 
-    private val deaccentRows = listOf(
-        "aáàảãạăắằẳẵặâấầẩẫậ",
-        "eéèẻẽẹêếềểễệ",
-        "iíìỉĩị",
-        "oóòỏõọôốồổỗộơớờởỡợ",
-        "uúùủũụưứừửữự",
-        "yýỳỷỹỵ"
-    )
-
     private val vocabulary = mutableMapOf<String, Entry>().apply {
         // Từ rất phổ biến
         for (w in listOf(
@@ -292,16 +283,9 @@ class ContextPredictor {
         val i = lowerBound(triKeys, key)
         return if (i < triKeys.size && triKeys[i] == key) triCnt[i] else 0
     }
-    private fun deaccent(s: String): String {
-        val sb = StringBuilder(s.length)
-        for (c in s) {
-            sb.append(
-                if (c == 'đ') 'd'
-                else deaccentRows.firstOrNull { c in it }?.get(0) ?: c
-            )
-        }
-        return sb.toString()
-    }
+    private fun deaccent(s: String): String =
+        if (s.none { it.code > 127 }) s
+        else String(CharArray(s.length) { ViGlyphs.bareChar(s[it]) })
 
     /** Một mục từ điển: freq = tần suất corpus/từ điển, personal = số lần
      *  người dùng gõ, lastSeen phục vụ eviction; các chỉ mục giữ tham chiếu
@@ -796,12 +780,12 @@ class ContextPredictor {
             val e = idx.sorted[i]
             i++
             if (e.word == p || !eligible(e)) continue // từ mới học cần gõ ≥2 lần
-            if (!marksCompatible(p, e.word)) continue
+            if (p !== base && !marksCompatible(p, e.word)) continue
             var score = e.freq + e.personal * weights.personalBoost +
                 contextScore(p2, p1, e.word, uTri)
             // Chỉ boost khi prefix có dấu — gõ "ho" (không dấu) không để
             // "hoa" đè "hôm"; gõ "hô" thì "hôm" thắng "hoa".
-            if (p != base && e.word.startsWith(p)) score += weights.exactPrefix
+            if (p !== base && e.word.startsWith(p)) score += weights.exactPrefix
             if (best.size == limit && score <= best[limit - 1].second) continue
             best.add(e.word to score)
             best.sortByDescending { it.second }
@@ -854,7 +838,7 @@ class ContextPredictor {
         while (i < idx.sorted.size && idx.sorted[i].base.startsWith(base)) {
             val e = idx.sorted[i++]
             if (e.word != w && e.word.length > w.length && eligible(e) &&
-                marksCompatible(w, e.word)) return true
+                (w === base || marksCompatible(w, e.word))) return true
         }
         return false
     }

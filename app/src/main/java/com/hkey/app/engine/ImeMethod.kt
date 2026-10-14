@@ -36,6 +36,7 @@ interface ImeEngine {
     fun stripTones(s: String): String
     /** Phím mark kiểu Telex ('w'); VNI không có -> null -> resume đường buffer. */
     fun applyW(word: String): String? = null
+    fun clearCache() {}
 
     /** ⌫ xóa 1 ký tự HIỂN THỊ cuối (1.7): thử bỏ từng phím thô để kết quả
      *  đúng bằng phần hiển thị còn lại; không khớp thì cắt dần đuôi thô,

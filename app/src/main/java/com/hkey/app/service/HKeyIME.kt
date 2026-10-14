@@ -395,6 +395,11 @@ class HKeyIME : InputMethodService() {
             worker.post {
                 predictor.clearLearned()
                 store.clear()
+                val fresh = predictor.commonWordFreqs()
+                repeatHandler.post {
+                    commonFreqs = fresh
+                    engine.clearCache()
+                }
             }
         }
     }
@@ -585,9 +590,12 @@ class HKeyIME : InputMethodService() {
             // chỉ dựng lúc nạp dict; thiếu bước này thì "max" vừa chạm vẫn
             // bị bẻ thành "mã" ở lần gõ sau (điều kiện recordSequence giống
             // nhau: chỉ chữ cái, độ dài hợp lý).
-            val w = word.lowercase().trim()
+            val w = TelexEngine.collapseTripleEscapes(word).lowercase().trim()
             if (w.isNotEmpty() && w.length <= 24 && w.all { it.isLetter() }) {
-                repeatHandler.post { commonFreqs = commonFreqs + (w to Int.MAX_VALUE) }
+                repeatHandler.post {
+                    commonFreqs = commonFreqs + (w to Int.MAX_VALUE)
+                    engine.clearCache()
+                }
             }
             markLearnedDirty()
         }

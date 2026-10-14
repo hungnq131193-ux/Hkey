@@ -7,19 +7,7 @@ package com.hkey.app.engine
  */
 object ViSyllable {
 
-    private val rows = listOf(
-        "aáàảãạ", "ăắằẳẵặ", "âấầẩẫậ",
-        "eéèẻẽẹ", "êếềểễệ", "iíìỉĩị",
-        "oóòỏõọ", "ôốồổỗộ", "ơớờởỡợ",
-        "uúùủũụ", "ưứừửữự", "yýỳỷỹỵ"
-    )
-
-    private val decompose: Map<Char, Pair<Char, Int>> = buildMap {
-        for (row in rows) row.forEachIndexed { i, c -> put(c, row[0] to i) }
-        put('đ', 'đ' to 0)
-    }
-
-    private fun decomp(c: Char) = decompose[c] ?: (c to 0)
+    private fun decomp(c: Char) = ViGlyphs.decomposed(c)
 
     /** Nguyên âm gốc GIỮ dấu phụ (đ->d để khớp onset): 'ấ'->'â', 'ớ'->'ơ'.
      *  1.3.4: so vần trên dạng này — dấu mũ/móc đã gõ phải khớp đúng, chữ
@@ -79,7 +67,7 @@ object ViSyllable {
         var toneVal = 0
         for ((i, c) in word.withIndex()) {
             val (base, tone) = decomp(c)
-            if (c !in 'a'..'z' && c !in decompose) return false
+            if (c !in 'a'..'z' && c !in ViGlyphs.decompose) return false
             if (tone > 0) {
                 toneCount++
                 toneVal = tone
@@ -87,7 +75,7 @@ object ViSyllable {
             if (base == 'đ' && i != 0) return false
         }
         if (toneCount > 1) return false
-        val plain = word.map { syllableChar(it) }.joinToString("")
+        val plain = String(CharArray(word.length) { syllableChar(word[it]) })
         for (onset in onsets) {
             if (!plain.startsWith(onset)) continue
             val rhyme = plain.removePrefix(onset)
@@ -140,10 +128,10 @@ object ViSyllable {
         ) return false
         for (i in 1 until transformed.length) {
             if (ViGlyphs.decomposed(transformed[i]).second != 0) {
-                val pre = transformed.substring(0, i + 1)
-                    .map(ViGlyphs::bareChar).joinToString("")
-                val tail = transformed.substring(i + 1)
-                    .map(ViGlyphs::bareChar).joinToString("")
+                val pre = String(CharArray(i + 1) { ViGlyphs.bareChar(transformed[it]) })
+                val tail = String(CharArray(transformed.length - i - 1) {
+                    ViGlyphs.bareChar(transformed[i + 1 + it])
+                })
                 if (isValid(pre.lowercase(), strict = false) &&
                     isValid(tail.lowercase(), strict = false)
                 ) return false
@@ -218,7 +206,7 @@ object ViSyllable {
         if (word.none { decomp(it).second > 0 }) return word
         // Từ trần đã là từ thật ("kủo") -> giữ nguyên
         if (commonWord.invoke(word)) return word
-        val plain = word.map { syllableChar(it) }.joinToString("")
+        val plain = String(CharArray(word.length) { syllableChar(word[it]) })
         val (onsetLen, nuc, coda) = split(plain) ?: return word
         if (nuc.any { it in ViGlyphs.markedVowels }) return word // đã có mũ/móc
         val candidates = forcedMarks["$nuc|${if (coda.isEmpty()) "" else "C"}"]

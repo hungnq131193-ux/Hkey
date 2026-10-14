@@ -202,6 +202,10 @@ class TelexEngine(
         return sb.toString() to up
     }
 
+    override fun clearCache() {
+        lastTransform = null
+    }
+
     override fun transform(input: String): String {
         if (input.isEmpty()) return ""
         // 1.5.1: phím thô là từ đã biết/đã học ("max" sau khi user chạm ô
@@ -218,6 +222,7 @@ class TelexEngine(
             lastTransform = input to input
             return input
         }
+        lastTransform?.let { if (it.first == input) return it.second }
         // 1.5.14: 'd' cho đ gõ MUỘN — không kề D đầu âm tiết ("Dadx"->"Đã").
         // Tổng quát cho mọi vị trí d lẻ >= 2 và mọi dấu: d lẻ được gộp vào
         // D đầu, chỉ chấp nhận khi ra âm tiết Việt hoàn chỉnh (strict) hoặc
@@ -229,7 +234,10 @@ class TelexEngine(
             val lo = out.lowercase()
             if (ViSyllable.isValid(lo, strict = true) ||
                 opts.commonWord?.invoke(lo) == true
-            ) return out
+            ) {
+                lastTransform = input to out
+                return out
+            }
         }
         return transformBody(input)
     }
@@ -239,9 +247,13 @@ class TelexEngine(
      *  Trả về input đã đưa đ lên đầu và bỏ d lẻ, giữ nguyên hoa/thường;
      *  null nếu không có d muộn ("dd" kề nhau vẫn đi đường cũ). */
     private fun promoteLateD(input: String): String? {
-        if (input.length < 3 || !input[0].equals('d', ignoreCase = true)) return null
+        if (input.length < 3 || !input[0].equals('d', ignoreCase = true) ||
+            input[1].equals('d', ignoreCase = true)
+        ) return null
         val idx = input.indexOf('d', startIndex = 2, ignoreCase = true)
-        if (idx < 0) return null
+        if (idx < 0 || (idx + 1 < input.length && input[idx + 1].equals('d', ignoreCase = true))) {
+            return null
+        }
         val sb = StringBuilder(input.length)
         sb.append(if (input[0].isUpperCase()) 'Đ' else 'đ')
         for (i in 1 until input.length) if (i != idx) sb.append(input[i])
@@ -608,26 +620,28 @@ class TelexEngine(
             "qq" to "qu", "pp" to "ph", "tt" to "th"
         )
 
-        /** 1.5.19: gộp cụm hủy lặp 3 phím (aaa->aa, eee->ee, ooo->oo, ddd->dd)
-         *  về cặp chữ thật, giữ nguyên hoa/thường. */
+        /** 1.5.19/1.5.20: gộp cụm hủy lặp 3 phím (aaa->aa, eee->ee, ooo->oo,
+         *  ddd->dd) và cụm hủy w 2 phím (ww->w) về chữ thật, giữ hoa/thường. */
         internal fun collapseTripleEscapes(
             input: String,
             simple: Boolean = false
         ): String {
-            var hasTriple = false
+            var hasEscape = false
             var r = 1
             for (i in 1 until input.length) {
                 if (input[i].equals(input[i - 1], ignoreCase = true)) {
-                    if (++r >= 3) {
-                        val c = input[i].lowercaseChar()
-                        if (c == 'd' || (!simple && c in "aeo")) {
-                            hasTriple = true
-                            break
-                        }
+                    r++
+                    val c = input[i].lowercaseChar()
+                    if ((r >= 3 && (c == 'd' || (!simple && c in "aeo"))) ||
+                        (c == 'w' && r == 2 && (i + 1 == input.length ||
+                            !input[i + 1].equals('w', ignoreCase = true)))
+                    ) {
+                        hasEscape = true
+                        break
                     }
                 } else r = 1
             }
-            if (!hasTriple) return input
+            if (!hasEscape) return input
             val sb = StringBuilder(input.length)
             var i = 0
             while (i < input.length) {
@@ -635,7 +649,12 @@ class TelexEngine(
                 var j = i + 1
                 while (j < input.length && input[j].lowercaseChar() == c) j++
                 val run = j - i
-                if (run >= 3 && (c == 'd' || (!simple && c in "aeo"))) {
+                if (c == 'w' && run == 2) {
+                    sb.append(
+                        if (input[i + 1].isUpperCase()) input[i].uppercaseChar()
+                        else input[i]
+                    )
+                } else if (run >= 3 && (c == 'd' || (!simple && c in "aeo"))) {
                     var left = run
                     var k = i
                     while (left >= 3) {

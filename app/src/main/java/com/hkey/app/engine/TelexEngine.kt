@@ -256,16 +256,28 @@ class TelexEngine(
         // 2.x spell-check: phím dấu là ký tự cuối và kết quả không phải âm
         // tiết VN ("sachf"->"sàch" sai coda) -> in phím dấu thô ("sachf").
         // Chỉ xét phím CUỐI để không phá ký tự dấu giữa buffer ("dasng").
-        if (opts.spellCheckTone && input.length >= 2 &&
+        val res = if (opts.spellCheckTone && input.length >= 2 &&
             isToneCommand(input.lowercase(), input.length - 1) &&
             // 1.3.4: non-strict — vần chỉ-đóng đứng trần ("việ") là trạng
             // thái gõ dở hợp lệ, không in phím dấu thô
             !ViSyllable.isValid(out.lowercase(), strict = false)
         ) {
-            return transformInternal(input, true).also { lastTransform = input to it }
-        }
-        lastTransform = input to out
-        return out
+            transformInternal(input, true)
+        } else out
+        // 1.5.19: nếu input có cụm hủy lặp 3 phím (aaa/eee/ooo/ddd) mà phần
+        // sau lại sinh glyph Việt không hợp lệ ("deeepsee"->"deepsê",
+        // "deeepseek"->"deepsêk"), trả về bản chỉ gộp cụm 3 phím ("deepsee",
+        // "deepseek") để live-restore/commit không khôi phục ngược thành 3 chữ.
+        val finalOut = if (res.any { it.code > 127 } &&
+            !ViSyllable.isValid(res.lowercase(), strict = false)
+        ) {
+            val collapsed = collapseTripleEscapes(
+                input, opts.method == ImeMethod.TELEX_SIMPLE
+            )
+            if (collapsed != input) collapsed else res
+        } else res
+        lastTransform = input to finalOut
+        return finalOut
     }
 
     /** 1.5.10: chuỗi có phím dấu đúp (ss/ff/rr/xx/jj) mà transform gộp ra
@@ -275,8 +287,14 @@ class TelexEngine(
      *  đã học); "class"->"clas" ("clas" không phải từ) thì giữ nguyên "class".
      *  1.5.12: mở rộng cho nguyên âm đúp (aa/ee/oo): "moon"->"môn" nếu "môn"
      *  là từ đã biết; "book"->"bôk" ("bôk" không phải từ) thì giữ "book".
+     *  1.5.19: chuỗi có cụm hủy lặp 3 phím (aaa/eee/ooo/ddd) luôn là chuỗi
+     *  phím Telex ("deeepseek"->"deepseek"), không bao giờ là từ thật.
      *  Không dùng cache để tránh đọc nhầm kết quả cổng cũ. */
     private fun isTelexKeySequence(input: String): Boolean {
+        if (collapseTripleEscapes(
+                input, opts.method == ImeMethod.TELEX_SIMPLE
+            ) != input
+        ) return true
         val lower = input.lowercase()
         val explicitVietnamese = lower.contains("uwow") ||
             (lower.startsWith("dd") && !lower.startsWith("ddd"))
@@ -589,5 +607,53 @@ class TelexEngine(
             "cc" to "ch", "gg" to "gi", "kk" to "kh", "nn" to "ng",
             "qq" to "qu", "pp" to "ph", "tt" to "th"
         )
+
+        /** 1.5.19: gộp cụm hủy lặp 3 phím (aaa->aa, eee->ee, ooo->oo, ddd->dd)
+         *  về cặp chữ thật, giữ nguyên hoa/thường. */
+        internal fun collapseTripleEscapes(
+            input: String,
+            simple: Boolean = false
+        ): String {
+            var hasTriple = false
+            var r = 1
+            for (i in 1 until input.length) {
+                if (input[i].equals(input[i - 1], ignoreCase = true)) {
+                    if (++r >= 3) {
+                        val c = input[i].lowercaseChar()
+                        if (c == 'd' || (!simple && c in "aeo")) {
+                            hasTriple = true
+                            break
+                        }
+                    }
+                } else r = 1
+            }
+            if (!hasTriple) return input
+            val sb = StringBuilder(input.length)
+            var i = 0
+            while (i < input.length) {
+                val c = input[i].lowercaseChar()
+                var j = i + 1
+                while (j < input.length && input[j].lowercaseChar() == c) j++
+                val run = j - i
+                if (run >= 3 && (c == 'd' || (!simple && c in "aeo"))) {
+                    var left = run
+                    var k = i
+                    while (left >= 3) {
+                        sb.append(input[k])
+                        sb.append(
+                            if (input[k + 2].isUpperCase()) input[k + 1].uppercaseChar()
+                            else input[k + 1]
+                        )
+                        k += 3
+                        left -= 3
+                    }
+                    while (left-- > 0) sb.append(input[k++])
+                } else {
+                    sb.append(input, i, j)
+                }
+                i = j
+            }
+            return sb.toString()
+        }
     }
 }

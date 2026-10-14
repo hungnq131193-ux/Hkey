@@ -636,23 +636,33 @@ class ContextPredictor {
     ) {
         var changed = false
         for ((w0, p, t) in words) {
-            val k = w0.lowercase()
+            // 1.5.19: dọn từ học nhầm chứa cụm hủy lặp 3 phím ("deeepseek"->"deepseek")
+            val w = TelexEngine.collapseTripleEscapes(w0)
+            val k = w.lowercase()
             val e = vocabulary[k]
             if (e != null) {
-                e.personal = p; e.lastSeen = t
-                if (w0 != k) e.cased = w0
+                e.personal = if (w != w0 && e.personal > 0) e.personal + p else p
+                e.lastSeen = maxOf(e.lastSeen, t)
+                if (w != k) e.cased = w
             } else {
                 vocabulary[k] = Entry(k, deaccent(k), 0, p, t,
-                    cased = if (w0 == k) null else w0)
+                    cased = if (w == k) null else w)
                 indexCache?.insert(vocabulary.getValue(k))
                 changed = true
             }
         }
-        for ((p, n, c) in bis) {
-            userBigram.getOrPut(p) { mutableMapOf() }[n] = c
+        for ((p0, n0, c) in bis) {
+            val p = TelexEngine.collapseTripleEscapes(p0)
+            val n = TelexEngine.collapseTripleEscapes(n0)
+            val m = userBigram.getOrPut(p) { mutableMapOf() }
+            m[n] = (m[n] ?: 0) + c
         }
         for (t in tris) {
-            userTrigram.getOrPut("${t.prev2}|${t.prev}") { mutableMapOf() }[t.next] = t.count
+            val p2 = TelexEngine.collapseTripleEscapes(t.prev2)
+            val p1 = TelexEngine.collapseTripleEscapes(t.prev)
+            val n = TelexEngine.collapseTripleEscapes(t.next)
+            val m = userTrigram.getOrPut("$p2|$p1") { mutableMapOf() }
+            m[n] = (m[n] ?: 0) + t.count
         }
         if (changed) vocabVersion++
         indexCache?.topCache = null
@@ -1195,11 +1205,13 @@ class ContextPredictor {
         now: Long = System.currentTimeMillis(),
         prev2: String = ""
     ) {
-        val p = prev.lowercase().trim()
-        val raw = current.trim()
-        val c = raw.lowercase()
+        val p0 = prev.lowercase().trim()
+        val raw0 = current.trim()
+        val c0 = raw0.lowercase()
         // Chỉ học từ toàn chữ cái, độ dài hợp lý — không học chuỗi số/ký hiệu (2.3).
-        if (c.isEmpty() || c.length > 24 || c.any { !it.isLetter() }) return
+        if (c0.isEmpty() || c0.length > 24 || c0.any { !it.isLetter() }) return
+        val raw = TelexEngine.collapseTripleEscapes(raw0)
+        val c = raw.lowercase()
         val e = vocabulary[c]
         val cased = if (raw == c) null else raw
         if (e != null) {
@@ -1213,11 +1225,13 @@ class ContextPredictor {
                 .also { indexCache?.insert(it) }
             vocabVersion++
         }
-        if (p.isEmpty() || p.length > 24 || p.any { !it.isLetter() }) return
+        if (p0.isEmpty() || p0.length > 24 || p0.any { !it.isLetter() }) return
+        val p = TelexEngine.collapseTripleEscapes(p0)
         val transitions = userBigram.getOrPut(p) { mutableMapOf() }
         transitions[c] = (transitions[c] ?: 0) + 1
-        val pp = prev2.lowercase().trim()
-        if (pp.isNotEmpty() && pp.length <= 24 && pp.all { it.isLetter() }) {
+        val pp0 = prev2.lowercase().trim()
+        if (pp0.isNotEmpty() && pp0.length <= 24 && pp0.all { it.isLetter() }) {
+            val pp = TelexEngine.collapseTripleEscapes(pp0)
             val tri = userTrigram.getOrPut("$pp|$p") { mutableMapOf() }
             tri[c] = (tri[c] ?: 0) + 1
         }

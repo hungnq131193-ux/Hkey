@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.19 (versionCode 45)
+
+- Sửa lỗi gõ từ có cụm hủy lặp 3 phím Telex (`eee`/`aaa`/`ooo`/`ddd`) kèm
+  nguyên âm đúp hoặc dấu ở phía sau bị trả ngược về 3 chữ: gõ `deeepseek`
+  (hủy `dê` ở đầu rồi gõ tiếp `seek`) giờ hiển thị và chốt đúng `deepseek`
+  thay vì `deeepseek`.
+- Tự động dọn các từ học nhầm chứa cụm 3 phím (`deeepseek` → `deepseek`)
+  trong dữ liệu đã học mà không cần xóa dữ liệu học.
+
 ## 1.5.18 (versionCode 44)
 
 - Sửa chuỗi Telex rõ ràng bị dữ liệu đã học giữ thành chữ thô: `dduwow`

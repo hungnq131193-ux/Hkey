@@ -1164,8 +1164,12 @@ class HKeyIME : InputMethodService() {
         val expanded = macros[raw.lowercase()]
         // 1.1: mảng trong url/email/ip ("io" trong "hu.io.vn") không sửa, không học.
         // 1.4: ô NO_SUGGESTIONS không tự sửa.
+        // 1.5.19: từ đã gộp cụm hủy lặp 3 phím ra ASCII ("deeep"->"deep",
+        // "deeepseek"->"deepseek") là chữ thoát chủ động, không auto-correct.
+        val escapedTriple = typedWord.none { it.code > 127 } &&
+            TelexEngine.collapseTripleEscapes(raw) != raw
         val canFix = allowCorrection && expanded == null && !isProperNoun &&
-            !tokenGlued && !noSuggest && optAutoCorrect // U3: AUTO_CORRECT
+            !tokenGlued && !noSuggest && optAutoCorrect && !escapedTriple // U3: AUTO_CORRECT
         // P2: đường async được sửa cả khi chốt phím thô (typed vẫn có glyph
         // để typoFix bắt — "khoogn" hiển thị thô vẫn thành "không"); đường
         // đồng bộ giữ guard cũ typedWord !== raw.
@@ -1201,7 +1205,7 @@ class HKeyIME : InputMethodService() {
         lastCommittedWord = word
         // 1.4.0: từ chốt là chính phím thô (restorable) -> đánh dấu để
         // resumeWord không kéo tiếng Anh về buffer biến dạng
-        lastCommitWasRaw = word === raw
+        lastCommitWasRaw = word === raw || escapedTriple
         // 1.5.9: undo phải hiện đúng chữ user đã thấy (typedWord, vd "khoogn"
         // sau live-restore), không phải bản transform thô (typed, vd "khôgn")
         // — đồng nhất với đường async applyPendingFix.
@@ -1630,7 +1634,10 @@ class HKeyIME : InputMethodService() {
             predictor.rawTelexCandidates(req.raw, req.engine)
                 .map { TextContext.matchCase(req.current, it) }
         else emptyList()
+        val escapedTriple = req.current.none { it.code > 127 } &&
+            TelexEngine.collapseTripleEscapes(req.raw) != req.raw
         val fix = when {
+            escapedTriple -> null
             rawCands.size > 1 -> null
             // 1.5.9: chỉ đề nghị bản restore khi nó là âm tiết VN hợp lệ,
             // hoặc là phím thô (đường 1.3) — KHÔNG bao giờ đặt bản transform
@@ -1646,7 +1653,12 @@ class HKeyIME : InputMethodService() {
         val fixCased = fix?.let { TextContext.matchCase(req.current, it) }
         // 1.5.1: transform bẻ phím thô ("max"->"mã", "ddc"->"đc") -> ô cuối
         // luôn là chữ đã gõ để user chọn giữ nguyên; chạm = chốt + học.
-        val rawSide = req.raw.takeIf { it != req.current && it != fixCased }
+        // 1.5.19: chỉ hiện phím thô khi hiển thị đã biến thành chữ Việt —
+        // đang hiển thị ASCII sau khi gộp phím lặp ("deeep"->"deep",
+        // "deeepseek"->"deepseek") thì không đẩy phím thô thừa lên ô 3.
+        val rawSide = req.raw.takeIf {
+            it != req.current && it != fixCased && req.current.any { c -> c.code > 127 }
+        }
         val sides = (completions.asSequence()
             .map { TextContext.matchCase(req.current, it) } + rawCands)
             .filter { it != fixCased && it != req.current && it != rawSide }

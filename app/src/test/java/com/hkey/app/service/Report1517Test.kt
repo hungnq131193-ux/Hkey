@@ -65,4 +65,45 @@ class Report1517Test {
         h.ime.onStartInputView(text, false)
         assertEquals(KeyboardView.Page.LETTERS, keyboard(h).page)
     }
+
+    @Test fun tripleEscapedDeepseekDoesNotRevertToThreeEs() {
+        val h = ImeHarness()
+        val expected = listOf(
+            "d", "de", "dê", "dee", "deep", "deeps", "deepse", "deepsee", "deepseek"
+        )
+        "deeepseek".forEachIndexed { i, c ->
+            h.type(c.toString())
+            h.idle()
+            assertEquals("prefix ${"deeepseek".take(i + 1)}", expected[i], h.composing())
+        }
+        h.type(" ")
+        h.idle()
+        assertTrue(h.text().endsWith("deepseek "))
+    }
+
+    @Test fun poisonedLearnedDeepseekIsCleanedAndTransformed() {
+        val engine = com.hkey.app.engine.TelexEngine(com.hkey.app.engine.EngineOptions(
+            commonWord = { it in setOf("deeep", "deeepseek") }
+        ))
+        assertEquals("deep", engine.transform("deeep"))
+        assertEquals("deepseek", engine.transform("deeepseek"))
+        assertEquals("DeepSeek", engine.transform("DeeepSeek"))
+
+        val p = com.hkey.app.engine.ContextPredictor()
+        p.importLearned(
+            listOf(Triple("deeepseek", 3, 1000L)),
+            listOf(Triple("dùng", "deeepseek", 2)),
+            listOf(com.hkey.app.engine.UserTri("tôi", "dùng", "deeepseek", 2))
+        )
+        assertFalse(p.knowsWord("deeepseek"))
+        assertTrue(p.knowsWord("deepseek"))
+        assertTrue("deepseek" in p.completions("deep"))
+        assertTrue("deepseek" in p.predictNext("dùng", "tôi"))
+
+        val h = ImeHarness()
+        val c = h.ime.computeCandidates(
+            HKeyIME.SuggestRequest(1, "deepseek", null, "ok", "", false, raw = "deeepseek")
+        )
+        assertFalse(listOf(c.c1, c.c2, c.c3).contains("deeepseek"))
+    }
 }
